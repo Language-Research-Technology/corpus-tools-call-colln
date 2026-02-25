@@ -9,6 +9,10 @@ XLSX.set_fs(fs);
 //const sql = env.NODE_ENV === 'production' ? postgres(env.CALL_PG_URL, { ssl: { rejectUnauthorized: false } }) : postgres(env.CALL_PG_URL);
 const sql = postgres('postgres://postgres:postgres@localhost:5432/call');
 const wb = XLSX.utils.book_new();
+const toUrlSafe = (value) => {
+  if (value === null || value === undefined) return value;
+  return `#${String(value).trim().replace(/\s+/g, '_')}`;
+};
 
 // Contributors
 const contribMappping = {
@@ -18,8 +22,9 @@ const contributors = await sql`SELECT * FROM contributors ORDER BY id ASC;`;
 const contributorNameTypes = await sql`select distinct name_type from contributor_names;`;
 
 const columnsContrib = contributors.columns.map(c => c.name);
+const columnsContribWithUrlSafe = ['@id', ...columnsContrib];
 const columnsContribName = contributorNameTypes.map(r => r.name_type);
-const dataContrib = [[...columnsContrib, ...columnsContribName]];
+const dataContrib = [[...columnsContribWithUrlSafe, ...columnsContribName]];
 const contributorNames = await sql`select contributor_id, name, name_type from contributor_names;`;
 const contributorNameMap = [];
 for (const contrib of contributorNames) {
@@ -37,7 +42,10 @@ for (const contrib of contributorNames) {
 for (const contrib of contributors) {
   //console.log(extraNames);
   //dataContrib.push([ license.link, 'ldac:DataReuseLicense', license.name, license.license_and_permission_details]);
-  const row = columnsContrib.map(c => contrib[c]);
+  const row = columnsContribWithUrlSafe.map(c => {
+    if (c === '@id') return toUrlSafe(contrib.full_name);
+    return contrib[c];
+  });
   row.push(...columnsContribName.map(c => {
     const n = contributorNameMap[contrib.id][c];
     if (n) {
@@ -47,7 +55,7 @@ for (const contrib of contributors) {
   }));
   dataContrib.push(row);
 }
-XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dataContrib), 'Contributors');
+XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dataContrib), 'People');
 
 
 // Item Contributor Roles
@@ -56,15 +64,18 @@ const item_contributor_roles = await sql`SELECT ircr.id, ircr.item_record_id, c.
   LEFT JOIN contributors c ON c.id = ircr.contributor_id
   LEFT JOIN roles r ON r.id = ircr.role_id
   ORDER BY ircr.id ASC;`;
-  
-const columnsItemContributorRoles = item_contributor_roles.columns.map(c => c.name);
+// exclude full_name as it is only used to generate the @id column, don't want it in the sheet as well
+const columnsItemContributorRoles = [...item_contributor_roles.columns.map(c => c.name).filter(name => name !== 'full_name'), 'personId'];
 const dataItemContributorRoles = [columnsItemContributorRoles];
 for (const item_contributor_role of item_contributor_roles) {
-  const row = columnsItemContributorRoles.map(c => item_contributor_role[c]);
+  const row = columnsItemContributorRoles.map(c => {
+    if (c === 'personId') return toUrlSafe(item_contributor_role.full_name);
+    return item_contributor_role[c];
+  });
   dataItemContributorRoles.push(row);
 }
 
-XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dataItemContributorRoles), 'Item Contributor Roles');
+XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dataItemContributorRoles), 'ObjectPersonRole');
 
 
 
@@ -116,6 +127,9 @@ exportTable({
   ]
 });
 
+
+
+
 /** Export a table with additional extra one-to-many relationship */
 async function exportTableExtra() {
 
@@ -161,15 +175,14 @@ async function exportObjects() {
   LEFT JOIN types on types.id = r.type_id
   ORDER BY r.id ASC;`;
   const columns = objects.columns.map(c => c.name);
-  const data = [[...columns]];
-  data[0][0] = '@id';
+  const columnsWithUrlSafe = ['@id', ...columns];
+  const data = [[...columnsWithUrlSafe]];
 
   for (const object of objects) {
-    const row = columns.map(c => {
+    const row = columnsWithUrlSafe.map(c => {
+      if (c === '@id') return toUrlSafe(object.title);
       const v = object[c];
       switch (c) {
-        case 'id':
-          return `#${v}`;
         case 'keyword':
         case 'subject':
         case 'sponsors':
