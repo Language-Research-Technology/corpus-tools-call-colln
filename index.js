@@ -11,10 +11,84 @@ const sql = postgres('postgres://postgres:postgres@localhost:5432/call');
 const wb = XLSX.utils.book_new();
 const toUrlSafe = (value) => {
   if (value === null || value === undefined) return value;
-  return `#${String(value).trim().replace(/\s+/g, '_')}`;
+  // TODO strip other characters? 
+  return `#${String(value).trim().replace(/\p{P}+/gu, '').replace(/\s+/g, '_')}`;
 };
 
-// Contributors
+
+
+// Objects/Items
+async function exportObjects() {
+  // RepositoryObjects
+  const objects = await sql`SELECT r.*, 
+  licences.link as "isRef_license", 
+  activities.name as "activity", 
+  publishers.name as "publisher", 
+  languages.full_language_name as "languageID",
+  record_formats.name as "record_format",
+  types.name as "type",
+  (SELECT STRING_AGG(keywords.name, ',') from item_record_keywords irk 
+        INNER JOIN keywords ON irk.keyword_id = keywords.id 
+        WHERE irk.item_record_id = r.id
+        ) as keyword,
+  (SELECT STRING_AGG(subjects.name, ',') from item_record_subjects irs 
+        INNER JOIN subjects ON irs.subject_id = subjects.id 
+        WHERE irs.item_record_id = r.id
+        ) as subject,
+  (SELECT STRING_AGG(sponsors.name, ',') from item_record_sponsors irsp 
+        INNER JOIN sponsors ON irsp.sponsor_id = sponsors.id 
+        WHERE irsp.item_record_id = r.id
+        ) as sponsors,
+  (SELECT MAX(places.name) FROM item_record_places irp1 
+        INNER JOIN places ON irp1.place_id = places.id 
+        WHERE irp1.item_record_id = r.id AND place_type = 'Place of Origin'
+        ) as place_of_origin,
+  (SELECT MAX(places.name) FROM item_record_places irp2
+        INNER JOIN places ON irp2.place_id = places.id 
+        WHERE irp2.item_record_id = r.id AND place_type = 'Location of Original'
+        ) as location_of_original,
+  (SELECT MAX(places.name) FROM item_record_places irp3 
+        INNER JOIN places ON irp3.place_id = places.id 
+        WHERE irp3.item_record_id = r.id AND place_type = 'Place of Publication'
+        ) as place_of_publication 
+  from item_records r
+  LEFT JOIN licences on licences.id = r.licence_id
+  LEFT JOIN activities on activities.id = r.activity_id
+  LEFT JOIN publishers on publishers.id = r.publisher_id
+  LEFT JOIN languages on languages.language_series_number = r.language_series_number
+  LEFT JOIN record_formats on record_formats.id = r.record_format_id
+  LEFT JOIN types on types.id = r.type_id
+  ORDER BY r.id ASC;`;
+  const columns = objects.columns.map(c => c.name);
+  const columnsWithUrlSafe = ['@id', ...columns];
+  const data = [[...columnsWithUrlSafe]];
+
+  for (const object of objects) {
+    const row = columnsWithUrlSafe.map(c => {
+      if (c === '@id') return toUrlSafe(object.title);
+      const v = object[c];
+      switch (c) {
+        case 'languageID':
+          return toUrlSafe(v);
+        case 'keyword':
+        case 'subject':
+        case 'sponsors':
+          if (v) return '[' + v + ']';
+        default:
+          return v;
+      }
+    });
+    //console.log(row);
+    data.push(row);
+  }
+  //console.log(data);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), 'Objects');
+}
+await exportObjects();
+
+
+
+// Contributors/People
 const contribMappping = {
   full_name: 'name'
 };
@@ -58,6 +132,7 @@ for (const contrib of contributors) {
 XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dataContrib), 'People');
 
 
+
 // Item Contributor Roles
 const item_contributor_roles = await sql`SELECT ircr.item_record_id, ir.title, c.full_name, r.role_type
   FROM item_record_contributor_roles ircr
@@ -81,16 +156,19 @@ XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dataItemContributorRole
 
 
 
-
 // Languages
 const languages = await sql`SELECT languages.*, 
   (SELECT CONCAT('[', STRING_AGG(ln.name, ','), ']') from language_names ln WHERE ln.language_id = languages.id) as names
   FROM languages ORDER BY id ASC;`;
 
 const columnsLanguages = languages.columns.map(c => c.name);
-const dataLanguages = [columnsLanguages];
+const columnsLanguagesWithUrlSafe = ['@id', ...columnsLanguages];
+const dataLanguages = [columnsLanguagesWithUrlSafe];
 for (const language of languages) {
-  const row = columnsLanguages.map(c => language[c]);
+  const row = columnsLanguagesWithUrlSafe.map(c => {
+    if (c === '@id') return toUrlSafe(language.full_language_name);
+    return language[c];
+  });
   dataLanguages.push(row);
 }
 XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dataLanguages), 'Languages');
@@ -130,80 +208,6 @@ exportTable({
 });
 
 
-
-
-/** Export a table with additional extra one-to-many relationship */
-async function exportTableExtra() {
-
-}
-
-async function exportObjects() {
-  // RepositoryObjects
-  const objects = await sql`SELECT r.*, 
-  licences.link as "isRef_license", 
-  activities.name as "activity", 
-  publishers.name as "publisher", 
-  languages.full_language_name as "full_language_name",
-  record_formats.name as "record_format",
-  types.name as "type",
-  (SELECT STRING_AGG(keywords.name, ',') from item_record_keywords irk 
-        INNER JOIN keywords ON irk.keyword_id = keywords.id 
-        WHERE irk.item_record_id = r.id
-        ) as keyword,
-  (SELECT STRING_AGG(subjects.name, ',') from item_record_subjects irs 
-        INNER JOIN subjects ON irs.subject_id = subjects.id 
-        WHERE irs.item_record_id = r.id
-        ) as subject,
-  (SELECT STRING_AGG(sponsors.name, ',') from item_record_sponsors irsp 
-        INNER JOIN sponsors ON irsp.sponsor_id = sponsors.id 
-        WHERE irsp.item_record_id = r.id
-        ) as sponsors,
-  (SELECT MAX(places.name) FROM item_record_places irp1 
-        INNER JOIN places ON irp1.place_id = places.id 
-        WHERE irp1.item_record_id = r.id AND place_type = 'Place of Origin'
-        ) as place_of_origin,
-  (SELECT MAX(places.name) FROM item_record_places irp2
-        INNER JOIN places ON irp2.place_id = places.id 
-        WHERE irp2.item_record_id = r.id AND place_type = 'Location of Original'
-        ) as location_of_original,
-  (SELECT MAX(places.name) FROM item_record_places irp3 
-        INNER JOIN places ON irp3.place_id = places.id 
-        WHERE irp3.item_record_id = r.id AND place_type = 'Place of Publication'
-        ) as place_of_publication 
-  from item_records r
-  LEFT JOIN licences on licences.id = r.licence_id
-  LEFT JOIN activities on activities.id = r.activity_id
-  LEFT JOIN publishers on publishers.id = r.publisher_id
-  LEFT JOIN languages on languages.series_number = r.language_series_number
-  LEFT JOIN record_formats on record_formats.id = r.record_format_id
-  LEFT JOIN types on types.id = r.type_id
-  ORDER BY r.id ASC;`;
-  const columns = objects.columns.map(c => c.name);
-  const columnsWithUrlSafe = ['@id', ...columns];
-  const data = [[...columnsWithUrlSafe]];
-
-  for (const object of objects) {
-    const row = columnsWithUrlSafe.map(c => {
-      if (c === '@id') return toUrlSafe(object.title);
-      const v = object[c];
-      switch (c) {
-        case 'full_language_name':
-          return toUrlSafe(v);
-        case 'keyword':
-        case 'subject':
-        case 'sponsors':
-          if (v) return '[' + v + ']';
-        default:
-          return v;
-      }
-    });
-    //console.log(row);
-    data.push(row);
-  }
-  //console.log(data);
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), 'Objects');
-}
-await exportObjects();
 
 XLSX.writeFile(wb, 'ro-crate-metadata.xlsx');
 sql.end();
