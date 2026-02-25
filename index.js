@@ -143,6 +143,7 @@ async function exportObjects() {
   licences.link as "isRef_license", 
   activities.name as "activity", 
   publishers.name as "publisher", 
+  languages.full_language_name as "full_language_name",
   record_formats.name as "record_format",
   types.name as "type",
   (SELECT STRING_AGG(keywords.name, ',') from item_record_keywords irk 
@@ -173,6 +174,7 @@ async function exportObjects() {
   LEFT JOIN licences on licences.id = r.licence_id
   LEFT JOIN activities on activities.id = r.activity_id
   LEFT JOIN publishers on publishers.id = r.publisher_id
+  LEFT JOIN languages on languages.series_number = r.language_series_number
   LEFT JOIN record_formats on record_formats.id = r.record_format_id
   LEFT JOIN types on types.id = r.type_id
   ORDER BY r.id ASC;`;
@@ -185,6 +187,8 @@ async function exportObjects() {
       if (c === '@id') return toUrlSafe(object.title);
       const v = object[c];
       switch (c) {
+        case 'full_language_name':
+          return toUrlSafe(v);
         case 'keyword':
         case 'subject':
         case 'sponsors':
