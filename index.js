@@ -59,16 +59,18 @@ XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dataContrib), 'People')
 
 
 // Item Contributor Roles
-const item_contributor_roles = await sql`SELECT ircr.id, ircr.item_record_id, c.full_name, r.role_type
+const item_contributor_roles = await sql`SELECT ircr.item_record_id, ir.title, c.full_name, r.role_type
   FROM item_record_contributor_roles ircr
   LEFT JOIN contributors c ON c.id = ircr.contributor_id
   LEFT JOIN roles r ON r.id = ircr.role_id
+  LEFT JOIN item_records ir ON ir.id = ircr.item_record_id
   ORDER BY ircr.id ASC;`;
-// exclude full_name as it is only used to generate the @id column, don't want it in the sheet as well
-const columnsItemContributorRoles = [...item_contributor_roles.columns.map(c => c.name).filter(name => name !== 'full_name'), 'personId'];
+// exclude full_name and title as they are only used to generate the id columns, don't want them in the sheet as well
+const columnsItemContributorRoles = ['objectId', 'personId', ...item_contributor_roles.columns.map(c => c.name).filter(name => name !== 'full_name' && name !== 'title' && name !== 'item_record_id')];
 const dataItemContributorRoles = [columnsItemContributorRoles];
 for (const item_contributor_role of item_contributor_roles) {
   const row = columnsItemContributorRoles.map(c => {
+    if (c === 'objectId') return toUrlSafe(item_contributor_role.title);
     if (c === 'personId') return toUrlSafe(item_contributor_role.full_name);
     return item_contributor_role[c];
   });
