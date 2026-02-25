@@ -6,7 +6,8 @@ XLSX.set_fs(fs);
 
 //const sql = postgres('postgres://postgres:postgres@host.docker.internal:5432/postgres');
 //const sql = postgres({ host: 'host.docker.internal', database: 'postgres', port: 5432, user: 'postgres' });
-const sql = env.NODE_ENV === 'production' ? postgres(env.CALL_PG_URL, { ssl: { rejectUnauthorized: false } }) : postgres(env.CALL_PG_URL);
+//const sql = env.NODE_ENV === 'production' ? postgres(env.CALL_PG_URL, { ssl: { rejectUnauthorized: false } }) : postgres(env.CALL_PG_URL);
+const sql = postgres('postgres://postgres:postgres@localhost:5432/call');
 const wb = XLSX.utils.book_new();
 
 // Contributors
@@ -49,6 +50,25 @@ for (const contrib of contributors) {
 XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dataContrib), 'Contributors');
 
 
+// Item Contributor Roles
+const item_contributor_roles = await sql`SELECT ircr.id, ircr.item_record_id, c.full_name, r.role_type
+  FROM item_record_contributor_roles ircr
+  LEFT JOIN contributors c ON c.id = ircr.contributor_id
+  LEFT JOIN roles r ON r.id = ircr.role_id
+  ORDER BY ircr.id ASC;`;
+  
+const columnsItemContributorRoles = item_contributor_roles.columns.map(c => c.name);
+const dataItemContributorRoles = [columnsItemContributorRoles];
+for (const item_contributor_role of item_contributor_roles) {
+  const row = columnsItemContributorRoles.map(c => item_contributor_role[c]);
+  dataItemContributorRoles.push(row);
+}
+
+XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dataItemContributorRoles), 'Item Contributor Roles');
+
+
+
+
 // Languages
 const languages = await sql`SELECT languages.*, 
   (SELECT CONCAT('[', STRING_AGG(ln.name, ','), ']') from language_names ln WHERE ln.language_id = languages.id) as names
@@ -56,8 +76,8 @@ const languages = await sql`SELECT languages.*,
 
 const columnsLanguages = languages.columns.map(c => c.name);
 const dataLanguages = [columnsLanguages];
-for (const contrib of languages) {
-  const row = columnsLanguages.map(c => contrib[c]);
+for (const language of languages) {
+  const row = columnsLanguages.map(c => language[c]);
   dataLanguages.push(row);
 }
 XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dataLanguages), 'Languages');
