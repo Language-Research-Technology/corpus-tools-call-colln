@@ -194,7 +194,7 @@ async function exportTable({ tableName, sheetName, columns }) {
 }
 
 // Licences
-exportTable({
+await exportTable({
   tableName: 'licences',
   sheetName: 'Licenses',
   columns: [
@@ -210,4 +210,4 @@ exportTable({
 
 
 XLSX.writeFile(wb, 'ro-crate-metadata.xlsx');
-sql.end();
+await sql.end();
