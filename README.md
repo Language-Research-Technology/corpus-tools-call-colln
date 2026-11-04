@@ -1,4 +1,4 @@
-# corpus-tools-call
+# corpus-tools-call-colln
 
 A small Node.js script that exports data from a CALL PostgreSQL database into an Excel workbook. The workbook is structured as multiple sheets containing metadata extracted from the CALL database, making it easier to review and reuse corpus data in spreadsheet tools.
 
