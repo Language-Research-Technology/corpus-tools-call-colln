@@ -6,8 +6,11 @@ XLSX.set_fs(fs);
 
 //const sql = postgres('postgres://postgres:postgres@host.docker.internal:5432/postgres');
 //const sql = postgres({ host: 'host.docker.internal', database: 'postgres', port: 5432, user: 'postgres' });
-//const sql = env.NODE_ENV === 'production' ? postgres(env.CALL_PG_URL, { ssl: { rejectUnauthorized: false } }) : postgres(env.CALL_PG_URL);
-const sql = postgres('postgres://postgres:postgres@localhost:5432/call');
+const sql = env.NODE_ENV === 'production' ? postgres(env.CALL_PG_URL, { ssl: { rejectUnauthorized: false } }) : postgres(env.CALL_PG_URL);
+//const sql = postgres('postgres://postgres:postgres@localhost:5432/call');
+//const sql = postgres(process.env.CALL_PG_URL, {
+//  ssl: "require",
+//});
 const wb = XLSX.utils.book_new();
 const toUrlSafe = (value) => {
   if (value === null || value === undefined) return value;
