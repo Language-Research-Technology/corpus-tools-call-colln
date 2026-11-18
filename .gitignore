@@ -108,3 +108,7 @@ temp
 .DS_Store
 .env.*
 *.xlsx
+files
+cover_images
+item_record_files
+ocfl-repo

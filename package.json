@@ -19,7 +19,11 @@
     "url": "git+https://github.com/Language-Research-Technology/corpus-tools-call.git"
   },
   "dependencies": {
+    "language-data-commons-vocabs": "github:Language-Research-Technology/language-data-commons-vocabs#v1.0.2",
+    "oni-ocfl": "github:Language-Research-Technology/oni-ocfl#v1.8",
     "postgres": "^3.4.7",
+    "ro-crate": "^3.7.2",
+    "ro-crate-excel": "^1.2.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "overrides": {
