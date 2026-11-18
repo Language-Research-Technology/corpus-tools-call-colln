@@ -1,319 +1,232 @@
-import postgres from 'postgres';
-import * as XLSX from 'xlsx';
-import * as fs from 'fs';
-import path from "path";
-import { env } from 'node:process';
-import * as roCrateExcel from 'ro-crate-excel';
-//import npm ro.crate.excel from 'ro-crate-excel';
-console.log(Object.keys(roCrateExcel.default || {}));
-
-//need to add conformsto  
+import * as XLSX from "xlsx";
+import * as fs from "fs";
+import * as roCrateExcel from "ro-crate-excel";
 
 XLSX.set_fs(fs);
 
-//const sql = postgres('postgres://postgres:postgres@host.docker.internal:5432/postgres');
-//const sql = postgres({ host: 'host.docker.internal', database: 'postgres', port: 5432, user: 'postgres' });
-const sql = env.NODE_ENV === 'production' ? postgres(env.CALL_PG_URL, { ssl: { rejectUnauthorized: false } }) : postgres(env.CALL_PG_URL);
-//const sql = postgres('postgres://postgres:postgres@localhost:5432/call');
-//const sql = postgres(process.env.CALL_PG_URL, {
-//  ssl: "require",
-//});
-const wb = XLSX.utils.book_new();
-const toUrlSafe = (value) => {
-  if (value === null || value === undefined) return value;
-  // TODO strip other characters? 
-  return `#${String(value).trim().replace(/\p{P}+/gu, '').replace(/\s+/g, '_')}`;
-};
+const workbook = new roCrateExcel.Workbook();
 
-
-
-// Objects/Items
-async function exportObjects() {
-  // RepositoryObjects
-  const objects = await sql`SELECT r.*, 
-  licences.link as "isRef_license", 
-  activities.name as "activity", 
-  publishers.name as "publisher", 
-  languages.full_language_name as "languageID",
-  record_formats.name as "record_format",
-  types.name as "type",
-  (SELECT STRING_AGG(keywords.name, ',') from item_record_keywords irk 
-        INNER JOIN keywords ON irk.keyword_id = keywords.id 
-        WHERE irk.item_record_id = r.id
-        ) as keyword,
-  (SELECT STRING_AGG(subjects.name, ',') from item_record_subjects irs 
-        INNER JOIN subjects ON irs.subject_id = subjects.id 
-        WHERE irs.item_record_id = r.id
-        ) as subject,
-  (SELECT STRING_AGG(sponsors.name, ',') from item_record_sponsors irsp 
-        INNER JOIN sponsors ON irsp.sponsor_id = sponsors.id 
-        WHERE irsp.item_record_id = r.id
-        ) as sponsors,
-  (SELECT MAX(places.name) FROM item_record_places irp1 
-        INNER JOIN places ON irp1.place_id = places.id 
-        WHERE irp1.item_record_id = r.id AND place_type = 'Place of Origin'
-        ) as place_of_origin,
-  (SELECT MAX(places.name) FROM item_record_places irp2
-        INNER JOIN places ON irp2.place_id = places.id 
-        WHERE irp2.item_record_id = r.id AND place_type = 'Location of Original'
-        ) as location_of_original,
-  (SELECT MAX(places.name) FROM item_record_places irp3 
-        INNER JOIN places ON irp3.place_id = places.id 
-        WHERE irp3.item_record_id = r.id AND place_type = 'Place of Publication'
-        ) as place_of_publication 
-  from item_records r
-  LEFT JOIN licences on licences.id = r.licence_id
-  LEFT JOIN activities on activities.id = r.activity_id
-  LEFT JOIN publishers on publishers.id = r.publisher_id
-  LEFT JOIN languages on languages.language_series_number = r.language_series_number
-  LEFT JOIN record_formats on record_formats.id = r.record_format_id
-  LEFT JOIN types on types.id = r.type_id
-  ORDER BY r.id ASC;`;
-  const columns = objects.columns.map(c => c.name);
-  const columnsWithUrlSafe = ['@id', ...columns];
-  const data = [[...columnsWithUrlSafe]];
-
-  for (const object of objects) {
-    const row = columnsWithUrlSafe.map(c => {
-      if (c === '@id') return toUrlSafe(object.title);
-      const v = object[c];
-      switch (c) {
-        case 'languageID':
-          return toUrlSafe(v);
-        case 'keyword':
-        case 'subject':
-        case 'sponsors':
-          if (v) return '[' + v + ']';
-        default:
-          return v;
-      }
-    });
-    //console.log(row);
-    data.push(row);
-  }
-  //console.log(data);
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), 'Objects');
-}
-await exportObjects();
-
-
-
-// Contributors/People
-const contribMappping = {
-  full_name: 'name'
-};
-const contributors = await sql`SELECT * FROM contributors ORDER BY id ASC;`;
-const contributorNameTypes = await sql`select distinct name_type from contributor_names;`;
-
-const columnsContrib = contributors.columns.map(c => c.name);
-const columnsContribWithUrlSafe = ['@id', ...columnsContrib];
-const columnsContribName = contributorNameTypes.map(r => r.name_type);
-const dataContrib = [[...columnsContribWithUrlSafe, ...columnsContribName]];
-const contributorNames = await sql`select contributor_id, name, name_type from contributor_names;`;
-const contributorNameMap = [];
-for (const contrib of contributorNames) {
-  //contributorNameMap[]
-  if (contrib.contributor_id) { // !there are rows in the db missing the contributor_id
-    let names = contributorNameMap[contrib.contributor_id] = contributorNameMap[contrib.contributor_id] || {};
-    //if (names[contrib.name_type]) console.log('Duplicate name for contributor ',contrib.contributor_id);
-    if (names[contrib.name_type]) {
-      names[contrib.name_type].push(contrib.name);
-    } else {
-      names[contrib.name_type] = [contrib.name];
-    }
-  }
-}
-for (const contrib of contributors) {
-  //console.log(extraNames);
-  //dataContrib.push([ license.link, 'ldac:DataReuseLicense', license.name, license.license_and_permission_details]);
-  const row = columnsContribWithUrlSafe.map(c => {
-    if (c === '@id') return toUrlSafe(contrib.full_name);
-    return contrib[c];
-  });
-  row.push(...columnsContribName.map(c => {
-    const n = contributorNameMap[contrib.id][c];
-    if (n) {
-      if (n.length === 1) return n[0];
-      else return `[${n.join(',')}]`;
-    }
-  }));
-  dataContrib.push(row);
-}
-XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dataContrib), 'People');
-
-
-
-// Item Contributor Roles
-const item_contributor_roles = await sql`SELECT ircr.item_record_id, ir.title, c.full_name, r.role_type
-  FROM item_record_contributor_roles ircr
-  LEFT JOIN contributors c ON c.id = ircr.contributor_id
-  LEFT JOIN roles r ON r.id = ircr.role_id
-  LEFT JOIN item_records ir ON ir.id = ircr.item_record_id
-  ORDER BY ircr.id ASC;`;
-// exclude full_name and title as they are only used to generate the id columns, don't want them in the sheet as well
-const columnsItemContributorRoles = ['objectId', 'personId', ...item_contributor_roles.columns.map(c => c.name).filter(name => name !== 'full_name' && name !== 'title' && name !== 'item_record_id')];
-const dataItemContributorRoles = [columnsItemContributorRoles];
-for (const item_contributor_role of item_contributor_roles) {
-  const row = columnsItemContributorRoles.map(c => {
-    if (c === 'objectId') return toUrlSafe(item_contributor_role.title);
-    if (c === 'personId') return toUrlSafe(item_contributor_role.full_name);
-    return item_contributor_role[c];
-  });
-  dataItemContributorRoles.push(row);
-}
-
-XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dataItemContributorRoles), 'ObjectPersonRole');
-
-
-
-// Languages
-const languages = await sql`SELECT languages.*, 
-  (SELECT CONCAT('[', STRING_AGG(ln.name, ','), ']') from language_names ln WHERE ln.language_id = languages.id) as names
-  FROM languages ORDER BY id ASC;`;
-
-const columnsLanguages = languages.columns.map(c => c.name);
-const columnsLanguagesWithUrlSafe = ['@id', ...columnsLanguages];
-const dataLanguages = [columnsLanguagesWithUrlSafe];
-for (const language of languages) {
-  const row = columnsLanguagesWithUrlSafe.map(c => {
-    if (c === '@id') return toUrlSafe(language.full_language_name);
-    return language[c];
-  });
-  dataLanguages.push(row);
-}
-XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dataLanguages), 'Languages');
-
-
-/** Export a simple table */
-async function exportTable({ tableName, sheetName, columns }) {
-  const records = await sql`select * from ${sql(tableName)};`;
-  const columnNames = columns ? columns.map(([t, s]) => t) : records.columns.map(c => c.name);
-  const data = [columnNames];
-  for (const record of records) {
-    data.push(columns.map(([target, source]) => {
-      if (typeof source === 'function') {
-        return source(record);
-      } else if (source) {
-        return record[source];
-      } else {
-        return record[target];
-      }
-    }));
-  }
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), sheetName || tableName);
-}
-
-// Licences
-await exportTable({
-  tableName: 'licences',
-  sheetName: 'Licenses',
-  columns: [
-    ['@id', 'link'],
-    ['@type', r => 'ldac:DataReuseLicense'],
-    ['name'],
-    ['description', 'license_and_permission_details'],
-    ['metadataIsPublic'],
-    ['allowTextIndex']
-  ]
-});
-
-
-
-XLSX.writeFile(wb, 'ro-crate-metadata.xlsx');
-await sql.end();
-
-
-const excelFile = "ro-crate-metadata-call.xlsx";
-const filesRoot = path.join(process.cwd(), "files");
-
-function getAllFiles(dir, result = []) {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-    for (const entry of entries) {
-        const fullPath = path.join(dir, entry.name);
-
-        if (entry.isDirectory()) {
-            getAllFiles(fullPath, result);
-        } else {
-            result.push(fullPath);
-        }
-    }
-
-    return result;
-}
-
-// filename -> relative path
-const fileMap = new Map();
-
-for (const file of getAllFiles(filesRoot)) {
-    const fileName = path.basename(file);
-
-    fileMap.set(
-        fileName,
-        path.relative(process.cwd(), file).replace(/\\/g, "/")
-    );
-}
-
-const workbook = XLSX.readFile(excelFile);
-const sheet = workbook.Sheets["CoverImages"];
-
-const rows = XLSX.utils.sheet_to_json(sheet, {
-    defval: ""
-});
-
-for (const row of rows) {
-    const imageName =
-        row.cover_image_file_name?.trim();
-
-    if (!imageName) continue;
-
-    const relativePath = fileMap.get(imageName);
-
-    if (relativePath) {
-        row["@id"] = relativePath;
-    }
-}
-
-workbook.Sheets["CoverImages"] =
-    XLSX.utils.json_to_sheet(rows);
-
-XLSX.writeFile(workbook, excelFile);
-
-console.log("CoverImages sheet updated.");
-/*
-
-const workbook1 = new roCrateExcel.Workbook();
-
-await workbook1.loadExcel(
-  'ro-crate-metadata-call.xlsx',
+await workbook.loadExcel(
+  "ro-crate-metadata-call.xlsx",
   false
 );
 
-console.log(workbook1.sheets);
+await workbook.workbookToCrate();
 
-await workbook1.workbookToCrate();
+//
+// Enrich generated entities
+//
 
-const json = workbook1.crate.getJson();
+for (const entity of workbook.crate.entities()) {
 
-console.log(json);
+  //
+  // Objects
+  //
+
+  if (
+    entity["@id"] &&
+    entity["@id"].startsWith("#object_")
+  ) {
+
+    entity["@type"] = [
+      "RepositoryObject"
+    ];
+
+    entity.conformsTo = {
+      "@id": "https://w3id.org/ldac/profile#Object"
+    };
+
+    if (entity.activity) {
+      entity.activity = {
+        "@type": "DefinedTerm",
+        name: entity.activity
+      };
+    }
+
+    if (entity.type) {
+      entity.additionalType = {
+        "@type": "DefinedTerm",
+        name: entity.type
+      };
+
+      delete entity.type;
+    }
+
+    if (entity.record_format) {
+      entity.recordFormat = {
+        "@type": "DefinedTerm",
+        name: entity.record_format
+      };
+
+      delete entity.record_format;
+    }
+
+    if (typeof entity.keyword === "string") {
+
+      entity.keywords = entity.keyword
+        .split(",")
+        .map(v => v.trim())
+        .filter(Boolean);
+
+      delete entity.keyword;
+    }
+
+    if (typeof entity.subject === "string") {
+
+      entity.subject = entity.subject
+        .split(",")
+        .map(v => ({
+          "@type": "Thing",
+          name: v.trim()
+        }));
+    }
+
+    if (typeof entity.sponsors === "string") {
+
+      entity.sponsor = entity.sponsors
+        .split(",")
+        .map(v => ({
+          "@type": "Organization",
+          name: v.trim()
+        }));
+
+      delete entity.sponsors;
+    }
+  }
+
+  //
+  // Files
+  //
+
+  if (entity.item_record_file_file_name) {
+
+    entity["@type"] = "File";
+
+    entity.name =
+      entity.item_record_file_file_name;
+
+    if (entity.item_record_file_content_type) {
+      entity.encodingFormat =
+        entity.item_record_file_content_type;
+    }
+
+    if (entity.item_record_file_file_size) {
+      entity.contentSize =
+        entity.item_record_file_file_size;
+    }
+
+    if (entity.item_record_file_updated_at) {
+      entity.dateModified =
+        entity.item_record_file_updated_at;
+    }
+  }
+
+  //
+  // Languages
+  //
+
+  if (entity.full_language_name) {
+
+    entity["@type"] = "Language";
+
+    entity.name =
+      entity.full_language_name;
+
+    if (entity.names) {
+      entity.alternateName =
+        entity.names;
+    }
+
+    if (entity.ISO_code) {
+      entity.identifier =
+        entity.ISO_code;
+    }
+  }
+
+  //
+  // Publishers
+  //
+
+  if (
+    entity.publisher_id &&
+    entity.name
+  ) {
+
+    entity["@type"] = "Organization";
+
+    entity.identifier =
+      entity.publisher_id;
+  }
+
+  //
+  // Places
+  //
+
+  if (
+    entity["@id"] &&
+    entity["@id"].startsWith("#place_")
+  ) {
+
+    entity["@type"] = "Place";
+  }
+
+  //
+  // Licences
+  //
+
+  if (
+    entity.licence_id ||
+    entity["ldac:allowTextIndex"] !== undefined
+  ) {
+
+    entity["@type"] =
+      "ldac:DataReuseLicense";
+
+    if (
+      entity.allowTextIndex &&
+      entity["ldac:allowTextIndex"] === undefined
+    ) {
+
+      entity["ldac:allowTextIndex"] =
+        entity.allowTextIndex;
+
+      delete entity.allowTextIndex;
+    }
+  }
+}
+
+//
+// Root dataset
+//
+
+const root =
+  workbook.crate.rootDataset;
+
+root["@type"] = [
+  "Dataset",
+  "RepositoryCollection"
+];
+
+root.name =
+  root.name ||
+  "CALL Collection";
+
+//
+// Write crate
+//
+
+const json =
+  workbook.crate.getJson();
 
 fs.writeFileSync(
-  'ro-crate-metadata.json',
-  JSON.stringify(json, null, 2)
+  "ro-crate-metadata.json",
+  JSON.stringify(
+    json,
+    null,
+    2
+  )
 );
-*/
 
-//console.log("crate =", workbook.crate);
-//console.log("root =", workbook.crate.rootDataset);
-/* Ro Crate Full API List */
-/*
-console.log(Object.getOwnPropertyNames(
-  Object.getPrototypeOf(workbook.crate)
-));
-*/
-
-//console.log(crate);
-/*fs.writeFileSync(
-  'ro-crate-metadata-template.json',
-  JSON.stringify(crate, null, 2)
-);*/
+console.log(
+  "ro-crate-metadata.json written"
+);
