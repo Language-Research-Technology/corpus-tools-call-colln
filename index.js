@@ -13,82 +13,6 @@ await workbook.loadExcel(
 
 await workbook.workbookToCrate();
 
-const entities = [...workbook.crate.entities()];
-
-function buildLookup(field, type) {
-  const lookup = new Map();
-
-  for (const entity of entities) {
-    const value = entity[field];
-    const types = Array.isArray(entity["@type"])
-      ? entity["@type"]
-      : [entity["@type"]];
-
-    if (
-      typeof value === "string" &&
-      value &&
-      types.includes(type) &&
-      typeof entity["@id"] === "string"
-    ) {
-      lookup.set(value.trim(), entity["@id"]);
-    }
-  }
-
-  return lookup;
-}
-
-const filesByName = buildLookup("item_record_file_file_name", "File");
-const coverImagesByName = buildLookup("cover_image_file_name", "File");
-const placesByName = new Map([
-  ...buildLookup("name", "Place"),
-  ...buildLookup("place", "Place")
-]);
-
-function setReference(entity, property, value, lookup, array = false) {
-  const key = typeof value === "string" ? value.trim() : "";
-  const targetId = key && lookup.get(key);
-
-  if (targetId) {
-    const ref = { "@id": targetId };
-    entity[property] = array ? [ref] : ref;
-  } else if (
-    entity[property] &&
-    JSON.stringify(entity[property]).includes("object Object")
-  ) {
-    delete entity[property];
-  }
-}
-
-for (const entity of entities) {
-  setReference(
-    entity,
-    "hasPart",
-    entity.item_record_file_file_name,
-    filesByName,
-    true
-  );
-  setReference(
-    entity,
-    "image",
-    entity.cover_image_file_name,
-    coverImagesByName,
-    true
-  );
-  setReference(
-    entity,
-    "call:placeOfOrigin",
-    entity.place_of_origin,
-    placesByName
-  );
-  setReference(
-    entity,
-    "call:placeOfPublication",
-    entity.place_of_publication,
-    placesByName
-  );
-  entity.place_of_publication = undefined;
-}
-
 for (const entity of workbook.crate.entities()) {
   if (entity.item_record_file_file_name) {
     console.log(
@@ -172,10 +96,14 @@ for (const entity of workbook.crate.entities()) {
   // Repository Objects
   //
 
-  if (
-    entity["@id"] &&
-    String(entity["@id"]).startsWith("#object_")
-  ) {
+  const isRepositoryObject =
+    entity["@type"] === "RepositoryObject" ||
+    (Array.isArray(entity["@type"]) &&
+      entity["@type"].includes("RepositoryObject")) ||
+    (entity["@id"] &&
+      String(entity["@id"]).startsWith("#object_"));
+
+  if (isRepositoryObject) {
 
     entity["@type"] = [
       "RepositoryObject"
@@ -264,6 +192,7 @@ for (const entity of workbook.crate.entities()) {
   //
 
   if (
+    !isRepositoryObject &&
     entity.item_record_file_file_name
   ) {
 
@@ -280,25 +209,6 @@ for (const entity of workbook.crate.entities()) {
 
     entity.dateModified =
       entity.item_record_file_updated_at;
-  }
-
-  if (
-    entity.cover_image_file_name
-  ) {
-
-    entity["@type"] = "File";
-
-    entity.name =
-      entity.cover_image_file_name;
-
-    entity.encodingFormat =
-      entity.cover_image_content_type;
-
-    entity.contentSize =
-      entity.cover_image_file_size;
-
-    entity.dateModified =
-      entity.cover_image_updated_at;
   }
 
   //
@@ -332,7 +242,8 @@ for (const entity of workbook.crate.entities()) {
 
   if (
     entity.publisher_id &&
-    entity.name
+    entity.name &&
+    !isRepositoryObject
   ) {
 
     entity["@type"] =
@@ -361,17 +272,18 @@ for (const entity of workbook.crate.entities()) {
   //
 
   if (
-    entity.licence_id ||
+    !isRepositoryObject &&
     entity[
       "ldac:allowTextIndex"
-    ] !== undefined
+    ] !== undefined ||
+    entity.allowTextIndex !== undefined
   ) {
 
     entity["@type"] =
       "ldac:DataReuseLicense";
 
     if (
-      entity.allowTextIndex &&
+      entity.allowTextIndex !== undefined &&
       entity[
         "ldac:allowTextIndex"
       ] === undefined
