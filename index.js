@@ -1,7 +1,14 @@
 import postgres from 'postgres';
 import * as XLSX from 'xlsx';
 import * as fs from 'fs';
+import path from "path";
 import { env } from 'node:process';
+import * as roCrateExcel from 'ro-crate-excel';
+//import npm ro.crate.excel from 'ro-crate-excel';
+console.log(Object.keys(roCrateExcel.default || {}));
+
+//need to add conformsto  
+
 XLSX.set_fs(fs);
 
 //const sql = postgres('postgres://postgres:postgres@host.docker.internal:5432/postgres');
@@ -214,3 +221,99 @@ await exportTable({
 
 XLSX.writeFile(wb, 'ro-crate-metadata.xlsx');
 await sql.end();
+
+
+const excelFile = "ro-crate-metadata-call.xlsx";
+const filesRoot = path.join(process.cwd(), "files");
+
+function getAllFiles(dir, result = []) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+    for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+
+        if (entry.isDirectory()) {
+            getAllFiles(fullPath, result);
+        } else {
+            result.push(fullPath);
+        }
+    }
+
+    return result;
+}
+
+// filename -> relative path
+const fileMap = new Map();
+
+for (const file of getAllFiles(filesRoot)) {
+    const fileName = path.basename(file);
+
+    fileMap.set(
+        fileName,
+        path.relative(process.cwd(), file).replace(/\\/g, "/")
+    );
+}
+
+const workbook = XLSX.readFile(excelFile);
+const sheet = workbook.Sheets["CoverImages"];
+
+const rows = XLSX.utils.sheet_to_json(sheet, {
+    defval: ""
+});
+
+for (const row of rows) {
+    const imageName =
+        row.cover_image_file_name?.trim();
+
+    if (!imageName) continue;
+
+    const relativePath = fileMap.get(imageName);
+
+    if (relativePath) {
+        row["@id"] = relativePath;
+    }
+}
+
+workbook.Sheets["CoverImages"] =
+    XLSX.utils.json_to_sheet(rows);
+
+XLSX.writeFile(workbook, excelFile);
+
+console.log("CoverImages sheet updated.");
+/*
+
+const workbook1 = new roCrateExcel.Workbook();
+
+await workbook1.loadExcel(
+  'ro-crate-metadata-call.xlsx',
+  false
+);
+
+console.log(workbook1.sheets);
+
+await workbook1.workbookToCrate();
+
+const json = workbook1.crate.getJson();
+
+console.log(json);
+
+fs.writeFileSync(
+  'ro-crate-metadata.json',
+  JSON.stringify(json, null, 2)
+);
+*/
+
+//console.log("crate =", workbook.crate);
+//console.log("root =", workbook.crate.rootDataset);
+/* Ro Crate Full API List */
+/*
+console.log(Object.getOwnPropertyNames(
+  Object.getPrototypeOf(workbook.crate)
+));
+*/
+
+//console.log(crate);
+/*fs.writeFileSync(
+  'ro-crate-metadata-template.json',
+  JSON.stringify(crate, null, 2)
+);*/
