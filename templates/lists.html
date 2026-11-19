@@ -25,14 +25,23 @@
         header.site-header {
             background: var(--ink);
             color: #fff;
-            padding: 1.6em 1em 2em;
+            padding: 0.7em 1em;
             text-align: center;
             border-bottom: 6px solid var(--accent);
         }
-        header.site-header .nav-row {
+        header.site-header .header-row {
             max-width: 1100px;
-            margin: 0 auto 1em;
-            text-align: left;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1em;
+        }
+        header.site-header .brand {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 1em;
         }
         header.site-header .nav-row a {
             color: #fff;
@@ -40,21 +49,17 @@
             font-size: 0.95em;
         }
         header.site-header .nav-row a:hover { text-decoration: underline; }
-        header.site-header h1 {
-            margin: 0 0 0.3em;
-            font-size: 1.8em;
-            font-weight: 600;
+        header.site-header .logo {
+            height: 40px;
         }
-        header.site-header p {
+        header.site-header h1 {
             margin: 0;
-            color: #c3cbd6;
-            max-width: 640px;
-            margin-left: auto;
-            margin-right: auto;
+            font-size: 1.4em;
+            font-weight: 600;
         }
         .search-wrap {
             max-width: 640px;
-            margin: 1.5em auto 0;
+            margin: 0.6em auto 0;
             padding: 0 1em;
             display: flex;
             align-items: stretch;
@@ -169,7 +174,6 @@
         }
         section.category.objects-section {
             margin-top: 1.5em;
-            display: none;
         }
         .item-filters {
             margin-top: 1.5em;
@@ -260,11 +264,13 @@
     {% set item = data.ids[data.entryPoint] %}
 
     <header class="site-header">
-        <div class="nav-row"><a href="ro-crate-preview.html">&larr; Map view</a></div>
-        <h1>{{ item.props["http://schema.org/name"].fwd[0].value if item.props["http://schema.org/name"] else "RO-Crate" }} &mdash; Lists</h1>
-        {% if item.props["http://schema.org/description"] %}
-            <p>{{ item.props["http://schema.org/description"].fwd[0].value }}</p>
-        {% endif %}
+        <div class="header-row">
+            <div class="brand">
+                <img class="logo" src="https://s3.amazonaws.com/callcollection/BIITE-logo-small.png" alt="Batchelor Institute of Indigenous Tertiary Education">
+                <h1>{{ item.props["http://schema.org/name"].fwd[0].value if item.props["http://schema.org/name"] else "RO-Crate" }} &mdash; Lists</h1>
+            </div>
+            <div class="nav-row"><a href="ro-crate-preview.html">&larr; Map view</a></div>
+        </div>
         <div class="search-wrap">
             <div class="search-field">
                 <input id="search-box" type="search" placeholder="Search languages, people, places and item titles&hellip;" autocomplete="off">
@@ -399,18 +405,15 @@
             s.section.style.display = (q && shown === 0) ? 'none' : '';
         });
 
-        var itemFiltersActive = !!q || requireFile || !!typeFilter;
         var objectsShown = 0;
         objectsSection.items.forEach(function (li) {
-            var match = itemFiltersActive &&
-                (!q || li.getAttribute('data-name').indexOf(q) !== -1) &&
+            var match = (!q || li.getAttribute('data-name').indexOf(q) !== -1) &&
                 (!requireFile || li.getAttribute('data-has-file') === 'true') &&
                 (!typeFilter || li.getAttribute('data-type') === typeFilter);
             li.classList.toggle('is-hidden', !match);
             if (match) objectsShown++;
         });
         totalShown += objectsShown;
-        objectsSection.section.style.display = (itemFiltersActive && objectsShown > 0) ? 'block' : 'none';
 
         status.textContent = q ? (totalShown + ' match' + (totalShown === 1 ? '' : 'es')) : '';
         clearBtn.style.display = q ? 'inline-flex' : 'none';
