@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import oni from 'oni-ocfl';
 import rocrate from 'ro-crate';
-import { attachFiles, configureCollector, createRunLogger, fileDirectories, populateCrate, repositoryPath } from './index.js';
+import { attachFiles, configureCollector, createRunLogger, fileDirectories, outputDirectory, populateCrate, repositoryPath } from './index.js';
 
 const { ROCrate } = rocrate;
 
@@ -18,6 +18,11 @@ test('uses file directories under files and respects overrides', () => {
     itemFiles: '/custom/items',
     coverImages: '/custom/covers'
   });
+});
+
+test('defaults the output directory to output and respects an override', () => {
+  assert.equal(outputDirectory({}), 'output');
+  assert.equal(outputDirectory({ CALL_OUTPUT_DIR: '/custom/output' }), '/custom/output');
 });
 
 test('selects and initializes an OCFL repository root', async () => {
@@ -118,6 +123,54 @@ test('reports missing optional values and preserves valid metadata', () => {
     'Skipping missing subject for item 1',
     'Skipping missing sponsor for item 1'
   ]);
+});
+
+test('maps source columns, role types, and name types through schema-mapping.json', () => {
+  const data = fixture();
+  data.languages[0].ISO_code = 'xx';
+  data.contributorRoles[0].role_type = 'Author';
+  data.contributorNames[0].name_type = 'First';
+  const crate = new ROCrate({}, { alwaysAsArray: true, resolveLinks: true });
+  populateCrate(crate, 'test', data);
+  const graph = crate.toJSON()['@graph'];
+  const item = graph.find(entity => entity['@id'] === 'arcp://name,test/Language_A1/001/2020/02');
+  // AIATSIS_area and AIATSIS_district both map to call:austlangCode and are concatenated directly.
+  const language = graph.find(entity => entity['@id'] === 'arcp://name,test/language/001');
+  assert.equal(language['call:austlangCode'], 'A1');
+  assert.equal(language['call:isoCode'], 'xx');
+  // A role_type matched in the map ('Author' -> 'author') links under that property, not 'contributor'.
+  assert.deepEqual([].concat(item.author).length, 1);
+  assert.equal([].concat(item.contributor || []).length, 1);
+  // A name_type matched in the map ('First' -> 'givenName') sets that property directly on the person,
+  // in addition to the existing call:nameVariant provenance record.
+  const person = graph.find(entity => entity['@id'] === 'arcp://name,test/person/2');
+  assert.equal(person.givenName, 'Another name');
+  assert.ok(person['call:nameVariant']);
+});
+
+test('omits null and empty-string source values instead of writing them to crate entities', () => {
+  const data = fixture();
+  data.items[0].admin_notes = '';
+  data.items[0].notes = null;
+  data.languages.push({ id: 7, language_series_number: '002', full_language_name: 'Other', AIATSIS_area: '', AIATSIS_district: null });
+  data.contributorNames[0].name = '';
+  data.contributorNames[0].name_type = 'First';
+  data.languageNames[0].name = null;
+  const crate = new ROCrate({}, { alwaysAsArray: true, resolveLinks: true });
+  populateCrate(crate, 'test', data);
+  const graph = crate.toJSON()['@graph'];
+  const item = graph.find(entity => entity['@id'] === 'arcp://name,test/Language_A1/001/2020/02');
+  assert.equal('call:admin_notes' in item, false);
+  assert.equal('call:notes' in item, false);
+  const otherLanguage = graph.find(entity => entity['@id'] === 'arcp://name,test/language/002');
+  assert.equal('call:austlangCode' in otherLanguage, false);
+  const contributorName = graph.find(entity => entity['@id'] === 'arcp://name,test/contributor-name/10');
+  assert.equal('name' in contributorName, false);
+  // An empty name_type-mapped value is not written to the person either.
+  const person = graph.find(entity => entity['@id'] === 'arcp://name,test/person/2');
+  assert.equal('givenName' in person, false);
+  const languageName = graph.find(entity => entity['@id'] === 'arcp://name,test/language-name/11');
+  assert.equal('name' in languageName, false);
 });
 
 test('links series zero to English when no language row exists', () => {
