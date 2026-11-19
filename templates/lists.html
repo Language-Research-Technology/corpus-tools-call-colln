@@ -56,11 +56,6 @@
             font-size: 1.4em;
             font-weight: 600;
         }
-        header.site-header p {
-            margin: 0.4em auto 0;
-            color: #c3cbd6;
-            max-width: 640px;
-        }
         .search-wrap {
             max-width: 640px;
             margin: 0.6em auto 0;
@@ -274,9 +269,6 @@
             <h1>{{ item.props["http://schema.org/name"].fwd[0].value if item.props["http://schema.org/name"] else "RO-Crate" }} &mdash; Lists</h1>
         </div>
         <div class="nav-row"><a href="ro-crate-preview.html">&larr; Map view</a></div>
-        {% if item.props["http://schema.org/description"] %}
-            <p>{{ item.props["http://schema.org/description"].fwd[0].value }}</p>
-        {% endif %}
         <div class="search-wrap">
             <div class="search-field">
                 <input id="search-box" type="search" placeholder="Search languages, people, places and item titles&hellip;" autocomplete="off">
