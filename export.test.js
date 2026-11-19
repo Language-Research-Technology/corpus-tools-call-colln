@@ -49,12 +49,13 @@ test('selects and initializes an OCFL repository root', async () => {
 
 function fixture() {
   return {
-    items: [{ id: 1, title: 'Title', language_series_number: '001', year_of_entry: '2020', accession_number: '02', licence_id: 3 }],
+    items: [{ id: 1, title: 'Title', language_series_number: '001', year_of_entry: '2020', accession_number: '02', licence_id: 3, publisher_id: 7 }],
     contributors: [{ id: 2, full_name: 'A Person' }],
     contributorNames: [{ id: 10, contributor_id: 2, name: 'Another name', name_type: 'alias' }],
     languages: [{ id: 4, language_series_number: '001', full_language_name: 'Language', AIATSIS_area: 'A', AIATSIS_district: '1' }],
     languageNames: [{ id: 11, language_id: 4, name: 'Alternate' }],
     places: [{ id: 5, name: 'Place' }, { id: 6, name: 'Other place' }],
+    publishers: [{ id: 7, name: 'Publisher' }],
     licences: [{ id: 3, name: 'License', link: 'https://example.org/license' }],
     contributorRoles: [{ id: 12, item_record_id: 1, contributor_id: 2, role_type: 'author' }, { id: 13, item_record_id: 1, contributor_id: 2, role_type: 'speaker' }],
     itemPlaces: [{ id: 14, item_record_id: 1, place_id: 5, place_type: 'Place of Origin' }, { id: 15, item_record_id: 1, place_id: 6, place_type: 'Place of Origin' }],
@@ -77,6 +78,27 @@ test('preserves item links, name variants, roles, and places in the crate graph'
   assert.ok(graph.some(entity => entity['@id'] === 'arcp://name,test/person/2' && entity['call:nameVariant']));
   assert.ok(graph.some(entity => entity['@id'] === 'arcp://name,test/language/001' && entity['call:nameVariant']));
   assert.deepEqual(item.inLanguage, { '@id': 'arcp://name,test/language/001' });
+  assert.deepEqual(item.publisher, { '@id': 'arcp://name,test/publisher/7' });
+  const publisher = graph.find(entity => entity['@id'] === 'arcp://name,test/publisher/7');
+  assert.ok([].concat(publisher['@type']).includes('Organization'));
+  assert.equal(publisher.name, 'Publisher');
+});
+
+test('warns and omits the publisher link when an item publisher_id does not resolve', () => {
+  const data = fixture();
+  data.items[0].publisher_id = 999;
+  const crate = new ROCrate({}, { alwaysAsArray: true, resolveLinks: true });
+  const warnings = [];
+  const warn = console.warn;
+  try {
+    console.warn = message => warnings.push(message);
+    populateCrate(crate, 'test', data);
+  } finally {
+    console.warn = warn;
+  }
+  const item = crate.toJSON()['@graph'].find(entity => entity['@id'] === 'arcp://name,test/Language_A1/001/2020/02');
+  assert.equal('publisher' in item, false);
+  assert.ok(warnings.some(message => message.includes('Item 1: publisher 999 not found')));
 });
 
 test('uses the configured namespace and preserves escaped item ID components', () => {

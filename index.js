@@ -114,6 +114,7 @@ export function populateCrate(crate, namespace, data, logger = console) {
 
   const people = entities(data.contributors, 'person', 'Person', 'full_name');
   const places = entities(data.places, 'place', 'Place', 'name');
+  const publishers = entities(data.publishers, 'publisher', 'Organization', 'name');
   const licences = new Map(data.licences.map(record => {
     const id = typeof record.link === 'string' && /^https?:\/\//i.test(record.link) ? record.link : entityId('licence', record.id);
     const entity = { '@id': id, '@type': 'ldac:DataReuseLicense', ...sourceProperties(record) };
@@ -160,6 +161,14 @@ export function populateCrate(crate, namespace, data, logger = console) {
     if (hasValue(record.title)) entity.name = record.title;
     if (record.language_series_number != null) entity.inLanguage = ref(requireEntity(languageBySeries, record.language_series_number, 'item language'));
     if (record.licence_id != null) entity.license = ref(requireEntity(licences, record.licence_id, 'item licence'));
+    // sourceProperties() already mapped publisher_id to the raw numeric call:publisher value
+    // above; replace it with a proper reference, or drop it if the publisher doesn't resolve.
+    delete entity.publisher;
+    if (record.publisher_id != null) {
+      const publisher = publishers.get(String(record.publisher_id));
+      if (publisher) entity.publisher = ref(publisher);
+      else logger.warn(`Item ${record.id}: publisher ${record.publisher_id} not found; omitting publisher`);
+    }
     items.set(String(record.id), add(entity));
     (logger.info || logger.log)(`Created item ${items.size}/${data.items.length}: source ID ${record.id}, crate ID ${id}`);
   }
@@ -214,12 +223,13 @@ export function populateCrate(crate, namespace, data, logger = console) {
 
 export async function loadData(sql) {
   return {
-    items: await sql`SELECT r.*, activities.name AS activity, publishers.name AS publisher, record_formats.name AS record_format, types.name AS type FROM item_records r LEFT JOIN activities ON activities.id = r.activity_id LEFT JOIN publishers ON publishers.id = r.publisher_id LEFT JOIN record_formats ON record_formats.id = r.record_format_id LEFT JOIN types ON types.id = r.type_id ORDER BY r.id`,
+    items: await sql`SELECT r.*, activities.name AS activity, record_formats.name AS record_format, types.name AS type FROM item_records r LEFT JOIN activities ON activities.id = r.activity_id LEFT JOIN record_formats ON record_formats.id = r.record_format_id LEFT JOIN types ON types.id = r.type_id ORDER BY r.id`,
     contributors: await sql`SELECT * FROM contributors ORDER BY id`,
     contributorNames: await sql`SELECT * FROM contributor_names ORDER BY id`,
     languages: await sql`SELECT * FROM languages ORDER BY id`,
     languageNames: await sql`SELECT * FROM language_names ORDER BY id`,
     places: await sql`SELECT * FROM places ORDER BY id`,
+    publishers: await sql`SELECT * FROM publishers ORDER BY id`,
     licences: await sql`SELECT * FROM licences ORDER BY id`,
     contributorRoles: await sql`SELECT ircr.*, roles.role_type FROM item_record_contributor_roles ircr LEFT JOIN roles ON roles.id = ircr.role_id ORDER BY ircr.id`,
     itemPlaces: await sql`SELECT * FROM item_record_places ORDER BY id`,
