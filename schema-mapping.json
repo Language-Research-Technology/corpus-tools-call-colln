@@ -220,7 +220,7 @@
     "digital_book_duration_or_pages":"numberOfPages",
     "Producer":"producer",
     "produced by":"producer",
-    "publisher":"publisher",
+    "publisher_id":"publisher",
     "Singer":"singer",
     "singers":"singer",
     "sponsors":"sponsor",
