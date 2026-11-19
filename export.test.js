@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import oni from 'oni-ocfl';
 import rocrate from 'ro-crate';
-import { attachFiles, configureCollector, createRunLogger, fileDirectories, outputDirectory, populateCrate, repositoryPath } from './index.js';
+import { attachFiles, configureCollector, createRunLogger, enrichPublisherRorIds, fileDirectories, lookupRorId, outputDirectory, populateCrate, repositoryPath } from './index.js';
 
 const { ROCrate } = rocrate;
 
@@ -99,6 +99,100 @@ test('warns and omits the publisher link when an item publisher_id does not reso
   const item = crate.toJSON()['@graph'].find(entity => entity['@id'] === 'arcp://name,test/Language_A1/001/2020/02');
   assert.equal('publisher' in item, false);
   assert.ok(warnings.some(message => message.includes('Item 1: publisher 999 not found')));
+});
+
+test('uses a publisher ror_id as the entity @id when present', () => {
+  const data = fixture();
+  data.publishers[0].ror_id = 'https://ror.org/05e34z294';
+  const crate = new ROCrate({}, { alwaysAsArray: true, resolveLinks: true });
+  populateCrate(crate, 'test', data);
+  const graph = crate.toJSON()['@graph'];
+  const publisher = graph.find(entity => entity['@id'] === 'https://ror.org/05e34z294');
+  assert.ok(publisher);
+  assert.ok([].concat(publisher['@type']).includes('Organization'));
+  assert.equal(publisher.name, 'Publisher');
+  const item = graph.find(entity => entity['@id'] === 'arcp://name,test/Language_A1/001/2020/02');
+  assert.deepEqual(item.publisher, { '@id': 'https://ror.org/05e34z294' });
+});
+
+test('does not merge two different publisher records that share a ror_id', () => {
+  const data = fixture();
+  data.publishers[0].ror_id = 'https://ror.org/05e34z294';
+  data.publishers.push({ id: 8, name: 'Other Publisher', ror_id: 'https://ror.org/05e34z294' });
+  const crate = new ROCrate({}, { alwaysAsArray: true, resolveLinks: true });
+  const warnings = [];
+  const warn = console.warn;
+  try {
+    console.warn = message => warnings.push(message);
+    populateCrate(crate, 'test', data);
+  } finally {
+    console.warn = warn;
+  }
+  const graph = crate.toJSON()['@graph'];
+  assert.ok(graph.some(entity => entity['@id'] === 'https://ror.org/05e34z294' && entity.name === 'Publisher'));
+  const other = graph.find(entity => entity.name === 'Other Publisher');
+  assert.ok(other);
+  assert.notEqual(other['@id'], 'https://ror.org/05e34z294');
+  assert.ok(warnings.some(message => message.includes('Publisher 8: ror_id https://ror.org/05e34z294 already used')));
+});
+
+function rorResponse(items) {
+  return { ok: true, json: async () => ({ number_of_results: items.length, items }) };
+}
+
+function rorMatch(id, name) {
+  return { score: 1, matching_type: 'SINGLE SEARCH', chosen: true, organization: { id, names: [{ types: ['ror_display', 'label'], value: name }] } };
+}
+
+test('lookupRorId returns the chosen organization, or null when none is chosen', async () => {
+  const chosenCalls = [];
+  const chosenFetch = async url => { chosenCalls.push(url); return rorResponse([rorMatch('https://ror.org/011rpdz66', 'AIATSIS')]); };
+  assert.equal(await lookupRorId('AIATSIS', chosenFetch), 'https://ror.org/011rpdz66');
+  assert.match(chosenCalls[0], /^https:\/\/api\.ror\.org\/v2\/organizations\?affiliation=AIATSIS$/);
+
+  const noneChosenFetch = async () => rorResponse([{ score: 0.89, matching_type: 'SINGLE SEARCH', chosen: false, organization: { id: 'https://ror.org/05e34z294' } }]);
+  assert.equal(await lookupRorId('Batchelor Press', noneChosenFetch), null);
+});
+
+test('lookupRorId rejects a chosen match that shares no distinctive word with the source name', async () => {
+  // Real example from this project's data: ROR confidently (score 0.97, chosen) matched
+  // "Korrawinga Aboriginal Corporation" to its entry for "UAL Corporation" (United
+  // Airlines' holding company), sharing nothing but the generic word "Corporation".
+  const fetchImpl = async () => rorResponse([rorMatch('https://ror.org/0414wrz80', 'UAL Corporation')]);
+  assert.equal(await lookupRorId('Korrawinga Aboriginal Corporation', fetchImpl), null);
+});
+
+test('lookupRorId throws on a non-ok response', async () => {
+  const failingFetch = async () => ({ ok: false, status: 503 });
+  await assert.rejects(() => lookupRorId('Anything', failingFetch), /ROR API returned 503/);
+});
+
+test('enrichPublisherRorIds caches lookups and leaves a failed lookup without a ror_id', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'call-ror-'));
+  try {
+    const cachePath = path.join(directory, 'ror-cache.json');
+    let calls = 0;
+    const fetchImpl = async () => {
+      calls++;
+      return rorResponse([rorMatch('https://ror.org/011rpdz66', 'AIATSIS')]);
+    };
+    const publishers = [{ id: 1, name: 'AIATSIS' }, { id: 2, name: 'Unknown Press' }];
+    const failingFetch = async () => { throw new Error('network down'); };
+    const warnings = [];
+    const logger = { warn: message => warnings.push(message) };
+
+    const first = await enrichPublisherRorIds(publishers, { cachePath, fetchImpl, logger });
+    assert.equal(first[0].ror_id, 'https://ror.org/011rpdz66');
+    assert.equal(calls, 2); // both publishers are uncached on the first pass
+
+    const secondPublishers = [{ id: 1, name: 'AIATSIS' }, { id: 3, name: 'Unknown Press 2' }];
+    const second = await enrichPublisherRorIds(secondPublishers, { cachePath, fetchImpl: failingFetch, logger });
+    assert.equal(second[0].ror_id, 'https://ror.org/011rpdz66'); // cache hit, no fetch needed
+    assert.equal('ror_id' in second[1], false); // failing fetch leaves it unset
+    assert.ok(warnings.some(message => message.includes('Publisher 3: ROR lookup failed for "Unknown Press 2": network down')));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('uses the configured namespace and preserves escaped item ID components', () => {

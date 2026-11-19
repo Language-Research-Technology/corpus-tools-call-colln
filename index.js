@@ -55,6 +55,97 @@ export function outputDirectory(env = process.env) {
   return env.CALL_OUTPUT_DIR || 'output';
 }
 
+export function rorCachePath(env = process.env) {
+  return env.CALL_ROR_CACHE_PATH || path.join(path.dirname(fileURLToPath(import.meta.url)), 'ror-cache.json');
+}
+
+async function loadRorCache(cachePath) {
+  try {
+    return JSON.parse(await readFile(cachePath, 'utf8'));
+  } catch (error) {
+    if (error.code === 'ENOENT') return {};
+    throw error;
+  }
+}
+
+async function saveRorCache(cachePath, cache) {
+  await writeFile(cachePath, `${JSON.stringify(cache, null, 2)}\n`);
+}
+
+// Generic words common to both free-text publisher names and ROR org names; excluded
+// when checking whether a match shares a real, distinctive word (see lookupRorId).
+const GENERIC_ORG_WORDS = new Set([
+  'the', 'and', 'of', 'for', 'inc', 'incorporated', 'ltd', 'limited', 'company', 'co',
+  'corporation', 'corp', 'association', 'aboriginal', 'press', 'publishing', 'publishers',
+  'publication', 'publications', 'group', 'committee', 'community', 'organisation',
+  'organization', 'language', 'centre', 'center', 'council', 'service', 'services',
+  'institute', 'school', 'department', 'government', 'university', 'college'
+]);
+
+function significantWords(name) {
+  return new Set(name.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
+    .filter(word => word.length > 2 && !GENERIC_ORG_WORDS.has(word)));
+}
+
+// ROR's affiliation-matching endpoint is built for exactly this "does this free-text
+// name identify a known organization" question: it flags at most one result per query
+// as `chosen` using its own matching algorithm, which is a much stronger signal than
+// picking the highest `score` ourselves. But `chosen` alone is still not reliable for
+// small or local organizations ROR doesn't actually have: real example seen in this
+// project's data, all three "chosen" with high scores: "Korrawinga Aboriginal
+// Corporation", "Thangkenharenge Aboriginal Corporation", and "Ngukurr Language
+// Centre, Diwurruwurru-jaru Aboriginal Corporation" all confidently matched to ROR's
+// entry for "UAL Corporation" (United Airlines' holding company), sharing nothing but
+// the generic word "Corporation". Require the match to also share a distinctive,
+// non-generic word with one of the organization's own names before trusting it.
+export async function lookupRorId(name, fetchImpl = fetch) {
+  const url = `https://api.ror.org/v2/organizations?affiliation=${encodeURIComponent(name)}`;
+  const response = await fetchImpl(url);
+  if (!response.ok) throw new Error(`ROR API returned ${response.status} for "${name}"`);
+  const body = await response.json();
+  const chosen = (body.items || []).find(item => item.chosen);
+  if (!chosen) return null;
+  const sourceWords = significantWords(name);
+  const matchedNames = chosen.organization.names || [];
+  const plausible = matchedNames.some(matchedName => {
+    for (const word of significantWords(matchedName.value)) {
+      if (sourceWords.has(word)) return true;
+    }
+    return false;
+  });
+  return plausible ? chosen.organization.id : null;
+}
+
+// Resolves a ror_id for each publisher with a name, caching results on disk (by
+// lowercased name) so repeat exports don't re-query ROR, and so a lookup failure just
+// leaves that publisher without a ror_id instead of failing the whole export.
+export async function enrichPublisherRorIds(publishers, { cachePath = rorCachePath(), fetchImpl = fetch, logger = console } = {}) {
+  const cache = await loadRorCache(cachePath);
+  let cacheChanged = false;
+  const results = [];
+  for (const publisher of publishers) {
+    let rorId = null;
+    if (hasValue(publisher.name)) {
+      const key = publisher.name.trim().toLowerCase();
+      if (key in cache) {
+        rorId = cache[key];
+      } else {
+        try {
+          rorId = await lookupRorId(publisher.name, fetchImpl);
+        } catch (error) {
+          logger.warn(`Publisher ${publisher.id}: ROR lookup failed for "${publisher.name}": ${error.message}`);
+          rorId = null;
+        }
+        cache[key] = rorId;
+        cacheChanged = true;
+      }
+    }
+    results.push(rorId ? { ...publisher, ror_id: rorId } : publisher);
+  }
+  if (cacheChanged) await saveRorCache(cachePath, cache);
+  return results;
+}
+
 const schemaMapping = JSON.parse(readFileSync(new URL('./schema-mapping.json', import.meta.url)));
 
 // Looks up a source column name or free-text value (a role_type, name_type, etc.) in
@@ -114,7 +205,20 @@ export function populateCrate(crate, namespace, data, logger = console) {
 
   const people = entities(data.contributors, 'person', 'Person', 'full_name');
   const places = entities(data.places, 'place', 'Place', 'name');
-  const publishers = entities(data.publishers, 'publisher', 'Organization', 'name');
+  const publishers = new Map(data.publishers.map(record => {
+    // Different publisher rows must not collapse into one crate entity just because
+    // they share a ror_id (whether a correct match for the same real organization
+    // under different historical names, or two names ROR happened to match to the
+    // same entry) - that would merge distinct source records. Only the first row to
+    // claim a given ror_id keeps it as @id; later ones fall back to a generated id.
+    const id = hasValue(record.ror_id) && !usedIds.has(record.ror_id) ? record.ror_id : entityId('publisher', record.id);
+    if (hasValue(record.ror_id) && id !== record.ror_id) {
+      logger.warn(`Publisher ${record.id}: ror_id ${record.ror_id} already used by another publisher; using a generated ID instead`);
+    }
+    const entity = { '@id': id, '@type': 'Organization', ...sourceProperties(record) };
+    if (hasValue(record.name)) entity.name = record.name;
+    return [String(record.id), add(entity)];
+  }));
   const licences = new Map(data.licences.map(record => {
     const id = typeof record.link === 'string' && /^https?:\/\//i.test(record.link) ? record.link : entityId('licence', record.id);
     const entity = { '@id': id, '@type': 'ldac:DataReuseLicense', ...sourceProperties(record) };
@@ -322,6 +426,9 @@ async function main(logger) {
       await transaction`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`;
       return loadData(transaction);
     });
+    if (process.env.CALL_SKIP_ROR_LOOKUP !== 'true') {
+      data.publishers = await enrichPublisherRorIds(data.publishers, { logger });
+    }
     const corpus = collector.newObject(template);
     corpus.mintArcpId();
     const items = populateCrate(corpus.crate, collector.namespace, data, logger);
