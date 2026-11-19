@@ -17,7 +17,7 @@
   "description": "Creates an ro-crate excel spreadsheet from CALL postgres database",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Language-Research-Technology/corpus-tools-call.git"
+    "url": "git+https://github.com/Language-Research-Technology/corpus-tools-call-colln.git"
   },
   "dependencies": {
     "language-data-commons-vocabs": "github:Language-Research-Technology/language-data-commons-vocabs#v1.0.2",
