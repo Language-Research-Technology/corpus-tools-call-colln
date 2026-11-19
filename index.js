@@ -3,8 +3,8 @@ import oni from 'oni-ocfl';
 import vocabs from 'language-data-commons-vocabs';
 import excel from 'ro-crate-excel';
 import rocrate from 'ro-crate';
-import { closeSync, mkdirSync, openSync, writeSync } from 'node:fs';
-import { readFile, readdir } from 'node:fs/promises';
+import { closeSync, mkdirSync, openSync, readFileSync, writeSync } from 'node:fs';
+import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -51,11 +51,35 @@ export function fileDirectories(env = process.env) {
   };
 }
 
+export function outputDirectory(env = process.env) {
+  return env.CALL_OUTPUT_DIR || 'output';
+}
+
+const schemaMapping = JSON.parse(readFileSync(new URL('./schema-mapping.json', import.meta.url)));
+
+// Looks up a source column name or free-text value (a role_type, name_type, etc.) in
+// schema-mapping.json. Returns undefined, not a call: fallback, so callers can choose
+// their own default for an unmapped key.
+function mappedProperty(key) {
+  return schemaMapping[key];
+}
+
+function hasValue(value) {
+  return value !== null && value !== undefined && value !== '';
+}
+
 function sourceProperties(record) {
-  return Object.fromEntries(Object.entries(record)
-    .filter(([, value]) => value !== null && value !== undefined)
-    .map(([key, value]) => [`call:${key}`, value instanceof Date ? value.toISOString() :
-      typeof value === 'object' ? JSON.stringify(value) : value]));
+  const result = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (!hasValue(value)) continue;
+    const property = mappedProperty(key) || `call:${key}`;
+    const normalized = value instanceof Date ? value.toISOString() :
+      typeof value === 'object' ? JSON.stringify(value) : value;
+    // Several source columns can map to the same crate property (e.g. AIATSIS_area and
+    // AIATSIS_district both become call:austlangCode); collect rather than overwrite.
+    result[property] = property in result ? [].concat(result[property], normalized) : normalized;
+  }
+  return result;
 }
 
 export function populateCrate(crate, namespace, data, logger = console) {
@@ -84,7 +108,7 @@ export function populateCrate(crate, namespace, data, logger = console) {
   };
   const entities = (records, kind, type, nameField) => new Map(records.map(record => {
     const entity = { '@id': entityId(kind, record.id), '@type': type, ...sourceProperties(record) };
-    if (record[nameField] != null) entity.name = record[nameField];
+    if (hasValue(record[nameField])) entity.name = record[nameField];
     return [String(record.id), add(entity)];
   }));
 
@@ -93,8 +117,8 @@ export function populateCrate(crate, namespace, data, logger = console) {
   const licences = new Map(data.licences.map(record => {
     const id = typeof record.link === 'string' && /^https?:\/\//i.test(record.link) ? record.link : entityId('licence', record.id);
     const entity = { '@id': id, '@type': 'ldac:DataReuseLicense', ...sourceProperties(record) };
-    if (record.name != null) entity.name = record.name;
-    if (record.license_and_permission_details != null) entity.description = record.license_and_permission_details;
+    if (hasValue(record.name)) entity.name = record.name;
+    if (hasValue(record.license_and_permission_details)) entity.description = record.license_and_permission_details;
     return [String(record.id), add(entity)];
   }));
   const languages = new Map();
@@ -107,7 +131,12 @@ export function populateCrate(crate, namespace, data, logger = console) {
     const key = String(language.language_series_number);
     if (languageBySeries.has(key)) throw new Error(`Duplicate language series number: ${key}`);
     const entity = { '@id': entityId('language', key), '@type': 'Language', ...sourceProperties(language) };
-    if (language.full_language_name != null) entity.name = language.full_language_name;
+    if (hasValue(language.full_language_name)) entity.name = language.full_language_name;
+    // AIATSIS_area and AIATSIS_district both map to call:austlangCode; concatenate them directly
+    // (e.g. 'N' + '81' -> 'N81') rather than collecting the generic sourceProperties array,
+    // matching the language ID convention in item-id.js.
+    const austlangCode = `${language.AIATSIS_area ?? ''}${language.AIATSIS_district ?? ''}`;
+    if (austlangCode !== '') entity['call:austlangCode'] = austlangCode;
     const stored = add(entity);
     languages.set(String(language.id), stored);
     languageBySeries.set(key, stored);
@@ -128,7 +157,7 @@ export function populateCrate(crate, namespace, data, logger = console) {
     const id = generateArcpId(namespace, itemId(record, language));
     if (usedIds.has(id)) throw new Error(`Item ${record.id}: duplicate crate entity ID ${id}`);
     const entity = { '@id': id, '@type': 'RepositoryObject', conformsTo: { '@id': languageProfileURI('Object') }, ...sourceProperties(record) };
-    if (record.title != null) entity.name = record.title;
+    if (hasValue(record.title)) entity.name = record.title;
     if (record.language_series_number != null) entity.inLanguage = ref(requireEntity(languageBySeries, record.language_series_number, 'item language'));
     if (record.licence_id != null) entity.license = ref(requireEntity(licences, record.licence_id, 'item licence'));
     items.set(String(record.id), add(entity));
@@ -142,12 +171,19 @@ export function populateCrate(crate, namespace, data, logger = console) {
       continue;
     }
     const person = requireEntity(people, name.contributor_id, 'contributor name');
-    const nameEntity = add({ '@id': entityId('contributor-name', name.id), '@type': 'PropertyValue', ...sourceProperties(name), name: name.name, propertyID: name.name_type });
+    const nameRecord = { '@id': entityId('contributor-name', name.id), '@type': 'PropertyValue', ...sourceProperties(name) };
+    if (hasValue(name.name)) nameRecord.name = name.name;
+    if (hasValue(name.name_type)) nameRecord.propertyID = name.name_type;
+    const nameEntity = add(nameRecord);
     crate.addValues(person, 'call:nameVariant', ref(nameEntity));
+    const mapped = mappedProperty(name.name_type);
+    if (mapped && hasValue(name.name)) crate.addValues(person, mapped, name.name);
   }
   for (const name of data.languageNames) {
     const language = requireEntity(languages, name.language_id, 'language name');
-    const nameEntity = add({ '@id': entityId('language-name', name.id), '@type': 'PropertyValue', ...sourceProperties(name), name: name.name });
+    const nameRecord = { '@id': entityId('language-name', name.id), '@type': 'PropertyValue', ...sourceProperties(name) };
+    if (hasValue(name.name)) nameRecord.name = name.name;
+    const nameEntity = add(nameRecord);
     crate.addValues(language, 'call:nameVariant', ref(nameEntity));
   }
   for (const role of data.contributorRoles) {
@@ -155,7 +191,7 @@ export function populateCrate(crate, namespace, data, logger = console) {
     const person = requireEntity(people, role.contributor_id, 'contributor role person');
     if (role.role_type == null) throw new Error(`Contributor role ${role.id}: missing role type`);
     const relation = add({ '@id': entityId('contributor-role', role.id), '@type': 'Role', roleName: role.role_type, contributor: ref(person), ...sourceProperties(role) });
-    crate.addValues(item, 'contributor', ref(relation));
+    crate.addValues(item, mappedProperty(role.role_type) || 'contributor', ref(relation));
   }
   for (const association of data.itemPlaces) {
     const item = requireEntity(items, association.item_record_id, 'place association item');
@@ -287,11 +323,17 @@ async function main(logger) {
     const metadata = JSON.parse(await stored.getFile({ logicalPath: 'ro-crate-metadata.json' }).asString());
     const expected = corpus.crate.toJSON();
     if (JSON.stringify(metadata) !== JSON.stringify(expected)) throw new Error('Published OCFL metadata does not match the generated crate');
+    const outputDir = outputDirectory();
+    mkdirSync(outputDir, { recursive: true });
+    const metadataPath = path.join(outputDir, 'ro-crate-metadata.json');
+    await writeFile(metadataPath, JSON.stringify(metadata, null, 2));
+    logger.info(`Wrote ${metadataPath}`);
     const workbookCrate = new ROCrate(metadata, { array: true, link: true });
     const workbook = new Workbook({ crate: workbookCrate });
     await workbook.crateToWorkbook();
-    await workbook.workbook.xlsx.writeFile('ro-crate-metadata.xlsx');
-    logger.info('Wrote ro-crate-metadata.xlsx');
+    const workbookPath = path.join(outputDir, 'ro-crate-metadata.xlsx');
+    await workbook.workbook.xlsx.writeFile(workbookPath);
+    logger.info(`Wrote ${workbookPath}`);
     return missingFiles;
   } finally {
     await sql.end();

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {% set item = data.ids[data.entryPoint] %}
+    {% set name = item.props["http://schema.org/name"].fwd[0].value if item.props["http://schema.org/name"] else item.id %}
+    <title>{{ name }}</title>
+    <style>
+        :root { --ink: #1a1512; --muted: #786e63; --line: #e9ded2; --accent: #c24628; --accent-dark: #8f3119; --bg: #faf6f1; --card: #ffffff; }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--ink); }
+        header.page-header { background: var(--ink); color: #fff; padding: 1em 1.2em; display: flex; align-items: center; gap: 1em; border-bottom: 4px solid var(--accent); }
+        header.page-header a.home-link { color: #fff; text-decoration: none; font-size: 0.95em; }
+        header.page-header a.home-link:hover { text-decoration: underline; }
+        header.page-header .crumb { color: #d9cfc3; font-size: 0.9em; }
+        main { max-width: 1000px; margin: 0 auto; padding: 2em 1em 4em; }
+        h1.title { margin: 0 0 0.2em; }
+        p.count { color: var(--muted); margin: 0 0 1.5em; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1em; }
+        .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; text-decoration: none; color: var(--ink); display: flex; flex-direction: column; transition: box-shadow .1s, transform .1s; }
+        .card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.12); transform: translateY(-1px); }
+        .card .thumb { width: 100%; height: 140px; background-size: cover; background-position: center; background-color: #f0e6da; }
+        .card .label { padding: 0.6em 0.8em; font-size: 0.92em; line-height: 1.3; }
+        .empty-note { color: var(--muted); font-style: italic; }
+    </style>
+</head>
+<body>
+
+{% set rootId = "" %}
+{% for id, page in data.pages %}
+    {% if page.path == "ro-crate-preview.html" %}{% set rootId = id %}{% endif %}
+{% endfor %}
+{% set rootName = data.ids[rootId].props["http://schema.org/name"].fwd[0].value if rootId and data.ids[rootId].props["http://schema.org/name"] else "Home" %}
+
+<header class="page-header">
+    <a class="home-link" href="../../../../../ro-crate-preview.html">&larr; {{ rootName }}</a>
+    <span class="crumb">/ Languages / {{ name }}</span>
+</header>
+
+<main>
+    <h1 class="title">{{ name }}</h1>
+
+    {% set objRefs = item.props["http://schema.org/inLanguage"].rev if item.props["http://schema.org/inLanguage"] else [] %}
+    <p class="count">{{ objRefs.length }} item{% if objRefs.length != 1 %}s{% endif %} in this language</p>
+
+    {% if objRefs.length == 0 %}
+        <p class="empty-note">No items found for this language.</p>
+    {% else %}
+        <div class="grid">
+            {% for o in (objRefs | sort(false, true, "target_name")) %}
+                {% if o.target_id and data.pages[o.target_id] %}
+                    {% set objEntity = data.ids[o.target_id] %}
+                    {% set imageId = objEntity.props["http://schema.org/image"].fwd[0].target_id if objEntity.props["http://schema.org/image"] else null %}
+                    <a class="card" href="../../../../../{{ data.pages[o.target_id].path }}">
+                        <div class="thumb" {% if imageId %}style="background-image: url('../../../../../{{ imageId }}');"{% endif %}></div>
+                        <div class="label">{{ o.target_name }}</div>
+                    </a>
+                {% endif %}
+            {% endfor %}
+        </div>
+    {% endif %}
+</main>
+
+</body>
+</html>

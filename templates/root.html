@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {% set rootName = data.ids[data.entryPoint].props["http://schema.org/name"].fwd[0].value if data.ids[data.entryPoint].props["http://schema.org/name"] %}
+    <title>{{ rootName or "RO-Crate" }}</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <style>
+        :root {
+            --ink: #1a1512;
+            --muted: #786e63;
+            --line: #e9ded2;
+            --accent: #c24628;
+            --accent-dark: #8f3119;
+            --bg: #faf6f1;
+            --card: #ffffff;
+        }
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--ink);
+        }
+        header.site-header {
+            background: var(--ink);
+            color: #fff;
+            padding: 1.6em 1em 1.6em;
+            text-align: center;
+            border-bottom: 6px solid var(--accent);
+        }
+        header.site-header .nav-row {
+            max-width: 1300px;
+            margin: 0 auto 0.8em;
+            text-align: right;
+        }
+        header.site-header .nav-row a {
+            color: #fff;
+            text-decoration: none;
+            font-size: 0.95em;
+        }
+        header.site-header .nav-row a:hover { text-decoration: underline; }
+        header.site-header h1 {
+            margin: 0 0 0.3em;
+            font-size: 1.8em;
+            font-weight: 600;
+        }
+        header.site-header p.desc {
+            margin: 0;
+            color: #c3cbd6;
+            max-width: 640px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .search-wrap {
+            max-width: 640px;
+            margin: 1.2em auto 0;
+            padding: 0 1em;
+            display: flex;
+            align-items: stretch;
+            gap: 0.6em;
+        }
+        .search-wrap .search-field {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+        #search-box {
+            width: 100%;
+            height: 100%;
+            padding: 0.8em 1em;
+            font-size: 1.05em;
+            border: 2px solid transparent;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+            outline: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        #search-box::-webkit-search-cancel-button {
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        #search-box:focus {
+            border-color: var(--accent);
+        }
+        #clear-search {
+            display: none;
+            flex: 0 0 auto;
+            align-items: center;
+            gap: 0.4em;
+            padding: 0 1.2em;
+            border: 2px solid transparent;
+            border-radius: 8px;
+            background: transparent;
+            color: #fff;
+            font-size: 0.95em;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        #clear-search:hover {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+        #search-status {
+            color: #c3cbd6;
+            font-size: 0.85em;
+            margin-top: 0.5em;
+            min-height: 1.2em;
+        }
+        main {
+            max-width: 1300px;
+            margin: 0 auto;
+            padding: 1.5em 1em 3em;
+        }
+        .layout {
+            display: flex;
+            gap: 1.5em;
+            align-items: flex-start;
+        }
+        @media (max-width: 900px) {
+            .layout { flex-direction: column; }
+        }
+        .map-col {
+            flex: 2 1 0;
+            min-width: 0;
+        }
+        .item-col {
+            flex: 1 1 0;
+            min-width: 0;
+            max-width: 100%;
+        }
+        .toggle-row {
+            display: flex;
+            gap: 0.5em;
+            margin-bottom: 0.8em;
+        }
+        .toggle-btn {
+            padding: 0.5em 1.2em;
+            border: 2px solid var(--line);
+            background: var(--card);
+            color: var(--ink);
+            border-radius: 20px;
+            font-size: 0.95em;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .toggle-btn.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+        }
+        #map {
+            width: 100%;
+            height: 70vh;
+            min-height: 420px;
+            border-radius: 10px;
+            border: 1px solid var(--line);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        }
+        .leaflet-popup-content a { color: var(--accent); font-weight: 600; }
+        .map-note {
+            color: var(--muted);
+            font-size: 0.82em;
+            margin-top: 0.6em;
+        }
+        .item-col .card-head {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            margin-bottom: 0.6em;
+        }
+        .item-col h2 {
+            margin: 0;
+            font-size: 1.1em;
+            color: var(--accent-dark);
+        }
+        .item-col .count {
+            color: var(--muted);
+            font-size: 0.85em;
+        }
+        .item-filters {
+            display: flex;
+            align-items: center;
+            gap: 1em;
+            margin-bottom: 0.8em;
+            font-size: 0.9em;
+        }
+        .item-filters label {
+            display: flex;
+            align-items: center;
+            gap: 0.4em;
+            cursor: pointer;
+        }
+        .item-filters select {
+            padding: 0.3em 0.5em;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: var(--card);
+            color: var(--ink);
+            font-size: 0.9em;
+        }
+        #selection-chip {
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            background: #f3e9dd;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 0.5em 0.8em;
+            margin-bottom: 0.8em;
+            font-size: 0.9em;
+        }
+        #selection-chip button {
+            border: none;
+            background: none;
+            color: var(--accent-dark);
+            font-weight: 700;
+            cursor: pointer;
+            font-size: 1em;
+        }
+        .item-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            max-height: 70vh;
+            min-height: 420px;
+            overflow-y: auto;
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+        }
+        .item-list li {
+            border-bottom: 1px solid var(--line);
+        }
+        .item-list li:last-child { border-bottom: none; }
+        .item-list li.is-hidden { display: none; }
+        .item-list li a {
+            display: flex;
+            align-items: center;
+            gap: 0.7em;
+            padding: 0.5em 0.7em;
+            text-decoration: none;
+            color: var(--ink);
+        }
+        .item-list li a:hover { background: var(--bg); }
+        .item-list .thumb {
+            flex: 0 0 auto;
+            width: 44px;
+            height: 44px;
+            border-radius: 6px;
+            background-size: cover;
+            background-position: center;
+            background-color: #f0e6da;
+        }
+        .item-list .label {
+            font-size: 0.92em;
+            line-height: 1.25;
+        }
+        .empty-note {
+            color: var(--muted);
+            font-style: italic;
+            padding: 1em;
+        }
+        footer {
+            text-align: center;
+            color: var(--muted);
+            padding: 2em 1em;
+            font-size: 0.85em;
+        }
+    </style>
+</head>
+<body>
+
+{# Places with the RepositoryObjects associated via the item-place join entity (RepositoryObject -> placeAssociation -> PropertyValue -> valueReference -> Place). #}
+{% set placesData = [] %}
+    {% for id in (data.types.Place | sort) %}
+        {% set e = data.ids[id] %}
+        {% set n = e.props["http://schema.org/name"].fwd[0].value if e.props["http://schema.org/name"] else e.id %}
+        {% set p = data.pages[id].path if data.pages[id] else "" %}
+        {% set ipRefs = e.props["http://schema.org/valueReference"].rev if e.props["http://schema.org/valueReference"] else [] %}
+        {% set seen = {} %}
+        {% set itemIds = [] %}
+        {% for ip in ipRefs %}
+            {% if ip.target_id and data.ids[ip.target_id] %}
+                {% set ipEntity = data.ids[ip.target_id] %}
+                {% set objRefs = ipEntity.props["arcp://name,callcolln/terms#placeAssociation"].rev if ipEntity.props["arcp://name,callcolln/terms#placeAssociation"] else [] %}
+                {% for o in objRefs %}
+                    {% if o.target_id and data.pages[o.target_id] and not seen[o.target_id] %}
+                        {% set _ = seen | setProp(o.target_id) %}
+                        {% set _ = itemIds.push(o.target_id) %}
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+        {% endfor %}
+        {% set _ = placesData.push({id: id, name: n, path: p, itemIds: itemIds}) %}
+    {% endfor %}
+
+    {# Languages linked directly via inLanguage (single hop). #}
+    {% set languagesData = [] %}
+    {% for id in (data.types.Language | sort) %}
+        {% set e = data.ids[id] %}
+        {% set n = e.props["http://schema.org/name"].fwd[0].value if e.props["http://schema.org/name"] else e.id %}
+        {% set p = data.pages[id].path if data.pages[id] else "" %}
+        {% set objRefs = e.props["http://schema.org/inLanguage"].rev if e.props["http://schema.org/inLanguage"] else [] %}
+        {% set itemIds = [] %}
+        {% for o in objRefs %}
+            {% if o.target_id and data.pages[o.target_id] %}
+                {% set _ = itemIds.push(o.target_id) %}
+            {% endif %}
+        {% endfor %}
+        {% set _ = languagesData.push({id: id, name: n, path: p, itemIds: itemIds}) %}
+    {% endfor %}
+
+    {% set objectsData = [] %}
+    {% for id in (data.types.RepositoryObject | sort) %}
+        {% set e = data.ids[id] %}
+        {% set n = e.props["http://schema.org/name"].fwd[0].value if e.props["http://schema.org/name"] else e.id %}
+        {% set p = data.pages[id].path if data.pages[id] else "" %}
+        {% set img = e.props["http://schema.org/image"].fwd[0].target_id if e.props["http://schema.org/image"] else "" %}
+        {% set t = e.props["arcp://name,callcolln/terms#type"].fwd[0].value if e.props["arcp://name,callcolln/terms#type"] else "" %}
+        {% set hasFile = e.props["http://schema.org/hasPart"] and e.props["http://schema.org/hasPart"].fwd.length > 0 %}
+        {% set _ = objectsData.push({id: id, name: n, path: p, image: img, type: t, hasFile: hasFile}) %}
+    {% endfor %}
+    {% set objectsData = objectsData | sort(false, true, "name") %}
+
+{% set item = data.ids[data.entryPoint] %}
+
+    <header class="site-header">
+        <div class="nav-row"><a href="lists.html">Lists view &rarr;</a></div>
+        <h1>{{ item.props["http://schema.org/name"].fwd[0].value if item.props["http://schema.org/name"] else "RO-Crate" }}</h1>
+        {% if item.props["http://schema.org/description"] %}
+            <p class="desc">{{ item.props["http://schema.org/description"].fwd[0].value }}</p>
+        {% endif %}
+        <div class="search-wrap">
+            <div class="search-field">
+                <input id="search-box" type="search" placeholder="Search languages, people, places and item titles&hellip;" autocomplete="off">
+            </div>
+            <button type="button" id="clear-search" aria-label="Clear search">Reset</button>
+        </div>
+        <div id="search-status"></div>
+    </header>
+
+    <main>
+        <div class="layout">
+            <div class="map-col">
+                <div class="toggle-row">
+                    <button type="button" class="toggle-btn active" id="toggle-places">Places</button>
+                    <button type="button" class="toggle-btn" id="toggle-languages">Languages</button>
+                </div>
+                <div id="map"></div>
+                <p class="map-note">Place markers are geocoded from place names recorded in the crate. Language markers are the centroid of the places associated with each language's items &mdash; an approximation, not a language-region boundary. Click a marker to filter the items list.</p>
+            </div>
+
+            <div class="item-col">
+                <div id="selection-chip">
+                    <span id="selection-chip-text"></span>
+                    <button type="button" id="selection-chip-clear" aria-label="Clear selection">&times;</button>
+                </div>
+                <div class="card-head">
+                    <h2>Items</h2>
+                    <span class="count" id="item-count"></span>
+                </div>
+                <div class="item-filters">
+                    <label><input type="checkbox" id="filter-has-file"> Has file</label>
+                    <select id="filter-type">
+                        <option value="">All types</option>
+                    </select>
+                </div>
+                <ul class="item-list" id="item-list"></ul>
+            </div>
+        </div>
+    </main>
+
+    <footer>Generated from an RO-Crate with ro-crate-static-site.</footer>
+
+<script>
+    var PLACES = {{ placesData | dump | safe }};
+    var LANGUAGES = {{ languagesData | dump | safe }};
+    var ITEMS = {{ objectsData | dump | safe }};
+    var PLACE_GEO = {"arcp://name,callcolln/place/1": {"lat": -21.0050485, "lon": 134.4059781}, "arcp://name,callcolln/place/2": {"lat": -23.6983884, "lon": 133.8812885}, "arcp://name,callcolln/place/3": {"lat": -13.9795273, "lon": 136.4613667}, "arcp://name,callcolln/place/4": {"lat": -13.0468045, "lon": 131.0283583}, "arcp://name,callcolln/place/5": {"lat": -16.0594471, "lon": 136.3054069}, "arcp://name,callcolln/place/7": {"lat": -17.4004322, "lon": 130.8057492}, "arcp://name,callcolln/place/9": {"lat": -12.46044, "lon": 130.8410469}, "arcp://name,callcolln/place/10": {"lat": -17.5558573, "lon": 133.5434089}, "arcp://name,callcolln/place/12": {"lat": -12.024312, "lon": 135.5678417}, "arcp://name,callcolln/place/13": {"lat": -12.5035105, "lon": 135.7962518}, "arcp://name,callcolln/place/14": {"lat": -12.324689, "lon": 133.0536179}, "arcp://name,callcolln/place/15": {"lat": -23.9393514, "lon": 132.7734704}, "arcp://name,callcolln/place/16": {"lat": -12.6738286, "lon": 132.8365938}, "arcp://name,callcolln/place/17": {"lat": -14.4646157, "lon": 132.2635993}, "arcp://name,callcolln/place/18": {"lat": -18.3357828, "lon": 130.6359219}, "arcp://name,callcolln/place/20": {"lat": -11.4220626, "lon": 130.6741662}, "arcp://name,callcolln/place/21": {"lat": -12.10003, "lon": 134.9144336}, "arcp://name,callcolln/place/22": {"lat": -13.7502552, "lon": 130.6891234}, "arcp://name,callcolln/place/23": {"lat": -14.732635, "lon": 134.7432914}, "arcp://name,callcolln/place/24": {"lat": -12.1804346, "lon": 136.7759913}, "arcp://name,callcolln/place/25": {"lat": -14.2780303, "lon": 135.7421561}, "arcp://name,callcolln/place/26": {"lat": -12.4799608, "lon": 130.9844108}, "arcp://name,callcolln/place/27": {"lat": -23.2049554, "lon": 131.9122492}, "arcp://name,callcolln/place/28": {"lat": -14.1505822, "lon": 130.0763736}, "arcp://name,callcolln/place/29": {"lat": -11.4049328, "lon": 130.4173921}, "arcp://name,callcolln/place/30": {"lat": -12.3280046, "lon": 134.9299289}, "arcp://name,callcolln/place/31": {"lat": -20.5018525, "lon": 119.0312357}, "arcp://name,callcolln/place/32": {"lat": -19.6481652, "lon": 134.1899847}, "arcp://name,callcolln/place/33": {"lat": -10.2851069, "lon": 142.2409061}, "arcp://name,callcolln/place/34": {"lat": -14.2396906, "lon": 129.521051}, "arcp://name,callcolln/place/35": {"lat": -23.2758507, "lon": 129.3885859}, "arcp://name,callcolln/place/36": {"lat": -17.0290326, "lon": 128.2120365}, "arcp://name,callcolln/place/37": {"lat": -21.2461353, "lon": 132.6139115}, "arcp://name,callcolln/place/39": {"lat": -12.2539194, "lon": 136.8899744}, "arcp://name,callcolln/place/40": {"lat": -22.2527454, "lon": 131.7978253}, "arcp://name,callcolln/place/42": {"lat": -37.80745, "lon": 144.9907213}, "arcp://name,callcolln/place/43": {"lat": -24.087034, "lon": 132.2737118}, "arcp://name,callcolln/place/44": {"lat": -26.9659828, "lon": 133.3078312}, "arcp://name,callcolln/place/45": {"lat": -26.2766919, "lon": 132.1338209}, "arcp://name,callcolln/place/47": {"lat": -35.2975906, "lon": 149.1012676}, "arcp://name,callcolln/place/48": {"lat": -24.1301, "lon": 134.3753}, "arcp://name,callcolln/place/49": {"lat": -14.333787, "lon": 130.1901127}, "arcp://name,callcolln/place/50": {"lat": -12.0571775, "lon": 134.226992}, "arcp://name,callcolln/place/59": {"lat": -17.3557743, "lon": 123.7004528}, "arcp://name,callcolln/place/60": {"lat": -11.7625858, "lon": 130.6321091}, "arcp://name,callcolln/place/61": {"lat": -11.7625858, "lon": 130.6321091}, "arcp://name,callcolln/place/63": {"lat": -22.1295261, "lon": 133.417508}, "arcp://name,callcolln/place/64": {"lat": -21.657235, "lon": 135.2253198}, "arcp://name,callcolln/place/65": {"lat": -20.4635071, "lon": 135.2515125}, "arcp://name,callcolln/place/66": {"lat": -26.1355479, "lon": 126.578675}, "arcp://name,callcolln/place/67": {"lat": -12.7308333, "lon": 134.5927778}, "arcp://name,callcolln/place/68": {"lat": -14.5250033, "lon": 132.8647963}, "arcp://name,callcolln/place/70": {"lat": -14.0352093, "lon": 129.5985122}, "arcp://name,callcolln/place/71": {"lat": -13.8606295, "lon": 136.8047384}, "arcp://name,callcolln/place/72": {"lat": -13.5868485, "lon": 130.6411359}, "arcp://name,callcolln/place/74": {"lat": -23.3609786, "lon": 120.7846349}, "arcp://name,callcolln/place/75": {"lat": -31.9558967, "lon": 115.8605784}, "arcp://name,callcolln/place/76": {"lat": -21.5067022, "lon": 133.9965227}, "arcp://name,callcolln/place/77": {"lat": -14.9278841, "lon": 133.069058}, "arcp://name,callcolln/place/79": {"lat": -20.3369914, "lon": 134.1984458}, "arcp://name,callcolln/place/80": {"lat": -21.8987641, "lon": 134.8420227}, "arcp://name,callcolln/place/81": {"lat": -21.0034866, "lon": 134.4052481}, "arcp://name,callcolln/place/83": {"lat": -15.2216204, "lon": 134.0818899}, "arcp://name,callcolln/place/84": {"lat": -15.2216204, "lon": 134.0818899}, "arcp://name,callcolln/place/85": {"lat": -12.433883, "lon": 130.9229031}, "arcp://name,callcolln/place/86": {"lat": -12.3586887, "lon": 130.881468}, "arcp://name,callcolln/place/87": {"lat": -22.334378, "lon": 122.7373239}, "arcp://name,callcolln/place/88": {"lat": -12.552481, "lon": 130.6831795}, "arcp://name,callcolln/place/89": {"lat": -37.8142454, "lon": 144.9631732}, "arcp://name,callcolln/place/90": {"lat": -20.3111814, "lon": 118.5801181}, "arcp://name,callcolln/place/91": {"lat": -25.2985784, "lon": 152.8535216}, "arcp://name,callcolln/place/92": {"lat": -25.24672, "lon": 153.1468044}, "arcp://name,callcolln/place/93": {"lat": -20.4087731, "lon": 118.5986644}, "arcp://name,callcolln/place/94": {"lat": -33.8698439, "lon": 151.2082848}, "arcp://name,callcolln/place/95": {"lat": -34.9281805, "lon": 138.5999312}, "arcp://name,callcolln/place/96": {"lat": -15.7657897, "lon": 130.039766}, "arcp://name,callcolln/place/97": {"lat": -30.5144881, "lon": 151.6656564}, "arcp://name,callcolln/place/98": {"lat": -13.2387657, "lon": 131.1070072}, "arcp://name,callcolln/place/100": {"lat": -26.6396269, "lon": 152.6347885}, "arcp://name,callcolln/place/101": {"lat": -14.9667405, "lon": 133.2929105}, "arcp://name,callcolln/place/102": {"lat": -13.6020675, "lon": 141.7706849}, "arcp://name,callcolln/place/103": {"lat": -14.8067534, "lon": 131.4287352}};
+    var LANGUAGE_GEO = {"arcp://name,callcolln/language/22": {"lat": -19.574662625, "lon": 137.2387018}, "arcp://name,callcolln/language/2": {"lat": -13.433532266666667, "lon": 134.70238400000002}, "arcp://name,callcolln/language/28": {"lat": -13.0468045, "lon": 131.0283583}, "arcp://name,callcolln/language/29": {"lat": -12.477328866666667, "lon": 133.39509306666667}, "arcp://name,callcolln/language/30": {"lat": -15.2012894, "lon": 127.36440555}, "arcp://name,callcolln/language/25": {"lat": -23.193284419999998, "lon": 136.86906435999998}, "arcp://name,callcolln/language/34": {"lat": -13.50014365, "lon": 132.2744288}, "arcp://name,callcolln/language/36": {"lat": -13.062044666666667, "lon": 130.78422456666667}, "arcp://name,callcolln/language/58": {"lat": -22.115330649999997, "lon": 133.52022115}, "arcp://name,callcolln/language/45": {"lat": -12.394005400000001, "lon": 134.4098849}, "arcp://name,callcolln/language/51": {"lat": -13.7557101, "lon": 131.64597880000002}, "arcp://name,callcolln/language/53": {"lat": -35.2975906, "lon": 149.1012676}, "arcp://name,callcolln/language/56": {"lat": -12.476223666666668, "lon": 132.76965606666667}, "arcp://name,callcolln/language/21": {"lat": -13.6020675, "lon": 141.7706849}, "arcp://name,callcolln/language/59": {"lat": -23.2049554, "lon": 131.9122492}, "arcp://name,callcolln/language/23": {"lat": -12.46044, "lon": 130.8410469}, "arcp://name,callcolln/language/64": {"lat": -13.662417399999999, "lon": 133.3852572}, "arcp://name,callcolln/language/65": {"lat": -27.281609633333336, "lon": 140.2788581}, "arcp://name,callcolln/language/66": {"lat": -13.0468045, "lon": 131.0283583}, "arcp://name,callcolln/language/67": {"lat": -15.7657897, "lon": 130.039766}, "arcp://name,callcolln/language/4": {"lat": -12.390382166666669, "lon": 133.83687786666667}, "arcp://name,callcolln/language/71": {"lat": -20.5018525, "lon": 119.0312357}, "arcp://name,callcolln/language/72": {"lat": -13.0468045, "lon": 131.0283583}, "arcp://name,callcolln/language/82": {"lat": -15.2012894, "lon": 127.36440555}, "arcp://name,callcolln/language/84": {"lat": -13.39852985, "lon": 130.85874085}, "arcp://name,callcolln/language/85": {"lat": -13.944857875, "lon": 133.52466975}, "arcp://name,callcolln/language/89": {"lat": -12.2539194, "lon": 136.8899744}, "arcp://name,callcolln/language/90": {"lat": -20.406516949999997, "lon": 118.80567690000001}, "arcp://name,callcolln/language/93": {"lat": -12.10003, "lon": 134.9144336}, "arcp://name,callcolln/language/57": {"lat": -22.109112366666665, "lon": 137.37905836666667}, "arcp://name,callcolln/language/97": {"lat": -13.0468045, "lon": 131.0283583}, "arcp://name,callcolln/language/1": {"lat": -19.45501686, "lon": 132.57989282}, "arcp://name,callcolln/language/98": {"lat": -12.2539194, "lon": 136.8899744}, "arcp://name,callcolln/language/104": {"lat": -12.75362225, "lon": 130.9347026}, "arcp://name,callcolln/language/105": {"lat": -13.0468045, "lon": 131.0283583}, "arcp://name,callcolln/language/7": {"lat": -21.001841629999998, "lon": 133.30183633999997}, "arcp://name,callcolln/language/16": {"lat": -24.244468474999998, "lon": 132.97633715}, "arcp://name,callcolln/language/3": {"lat": -18.21550315, "lon": 136.29941620000002}, "arcp://name,callcolln/language/9": {"lat": -12.217177, "lon": 136.83298285}, "arcp://name,callcolln/language/5": {"lat": -14.930436100000001, "lon": 130.82339805}, "arcp://name,callcolln/language/8": {"lat": -16.19718275, "lon": 136.39048708333334}, "arcp://name,callcolln/language/19": {"lat": -14.28086288, "lon": 132.95892476}, "arcp://name,callcolln/language/10": {"lat": -13.0468045, "lon": 131.0283583}, "arcp://name,callcolln/language/11": {"lat": -18.761131425, "lon": 135.12293095}, "arcp://name,callcolln/language/13": {"lat": -12.0571775, "lon": 134.226992}, "arcp://name,callcolln/language/12": {"lat": -20.5018525, "lon": 119.0312357}, "arcp://name,callcolln/language/18": {"lat": -12.407129750000001, "lon": 130.84574557500002}, "arcp://name,callcolln/language/107": {"lat": -16.750275666666667, "lon": 132.92058396666667}, "arcp://name,callcolln/language/14": {"lat": -14.598625349999999, "lon": 133.50344535}, "arcp://name,callcolln/language/15": {"lat": -12.466917966666665, "lon": 134.27758876666667}, "arcp://name,callcolln/language/60": {"lat": -18.797786033333335, "lon": 133.0332105}, "arcp://name,callcolln/language/108": {"lat": -13.0468045, "lon": 131.0283583}, "arcp://name,callcolln/language/119": {"lat": -12.1391157, "lon": 136.22890805}, "arcp://name,callcolln/language/109": {"lat": -13.64324755, "lon": 130.27470465}, "arcp://name,callcolln/language/128": {"lat": -13.678916766666667, "lon": 130.41284423333332}, "arcp://name,callcolln/language/113": {"lat": -25.2726492, "lon": 153.000163}, "arcp://name,callcolln/language/116": {"lat": -12.024312, "lon": 135.5678417}, "arcp://name,callcolln/language/120": {"lat": -12.551991000000001, "lon": 132.62767515000002}, "arcp://name,callcolln/language/121": {"lat": -14.4646157, "lon": 132.2635993}, "arcp://name,callcolln/language/124": {"lat": -14.5250033, "lon": 132.8647963}, "arcp://name,callcolln/language/111": {"lat": -13.91387285, "lon": 130.08450855}, "arcp://name,callcolln/language/132": {"lat": -13.64324755, "lon": 130.27470465}, "arcp://name,callcolln/language/134": {"lat": -15.2012894, "lon": 127.36440555}, "arcp://name,callcolln/language/0": {"lat": -14.880756466666668, "lon": 128.08328736666667}, "arcp://name,callcolln/language/138": {"lat": -18.321198975, "lon": 135.4887709}, "arcp://name,callcolln/language/140": {"lat": -20.5018525, "lon": 119.0312357}, "arcp://name,callcolln/language/144": {"lat": -12.062171, "lon": 135.24113764999998}, "arcp://name,callcolln/language/86": {"lat": -14.491760333333332, "lon": 134.24968226666667}, "arcp://name,callcolln/language/126": {"lat": -17.0290326, "lon": 128.2120365}, "arcp://name,callcolln/language/139": {"lat": -13.0468045, "lon": 131.0283583}, "arcp://name,callcolln/language/148": {"lat": -12.0571775, "lon": 134.226992}, "arcp://name,callcolln/language/155": {"lat": -20.4087731, "lon": 118.5986644}, "arcp://name,callcolln/language/127": {"lat": -13.0468045, "lon": 131.0283583}, "arcp://name,callcolln/language/161": {"lat": -24.26817815, "lon": 140.1041374}, "arcp://name,callcolln/language/163": {"lat": -12.551991000000001, "lon": 132.62767515000002}, "arcp://name,callcolln/language/165": {"lat": -12.551991000000001, "lon": 132.62767515000002}};
+</script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+(function () {
+    var itemsById = {};
+    ITEMS.forEach(function (it) { itemsById[it.id] = it; });
+
+    var box = document.getElementById('search-box');
+    var status = document.getElementById('search-status');
+    var clearBtn = document.getElementById('clear-search');
+    var itemListEl = document.getElementById('item-list');
+    var itemCountEl = document.getElementById('item-count');
+    var chip = document.getElementById('selection-chip');
+    var chipText = document.getElementById('selection-chip-text');
+    var chipClear = document.getElementById('selection-chip-clear');
+    var toggleBtns = {
+        places: document.getElementById('toggle-places'),
+        languages: document.getElementById('toggle-languages')
+    };
+    var hasFileCheckbox = document.getElementById('filter-has-file');
+    var typeSelect = document.getElementById('filter-type');
+    var itemTypes = Array.from(new Set(ITEMS.map(function (it) { return it.type; }).filter(Boolean))).sort();
+    itemTypes.forEach(function (t) {
+        var opt = document.createElement('option');
+        opt.value = t;
+        opt.textContent = t;
+        typeSelect.appendChild(opt);
+    });
+
+    var mode = 'places';
+    var selection = null; // {type, id, name, itemIds: Set}
+
+    function renderItemList() {
+        var q = box.value.trim().toLowerCase();
+        var requireFile = hasFileCheckbox.checked;
+        var typeFilter = typeSelect.value;
+        var rows = ITEMS.filter(function (it) {
+            if (selection && !selection.itemIds.has(it.id)) return false;
+            if (q && it.name.toLowerCase().indexOf(q) === -1) return false;
+            if (requireFile && !it.hasFile) return false;
+            if (typeFilter && it.type !== typeFilter) return false;
+            return true;
+        });
+
+        itemListEl.innerHTML = '';
+        if (rows.length === 0) {
+            var p = document.createElement('p');
+            p.className = 'empty-note';
+            p.textContent = 'No items found.';
+            itemListEl.appendChild(p);
+        } else {
+            rows.forEach(function (it) {
+                var li = document.createElement('li');
+                var a = document.createElement('a');
+                a.href = it.path;
+                var thumb = document.createElement('div');
+                thumb.className = 'thumb';
+                if (it.image) thumb.style.backgroundImage = "url('" + it.image + "')";
+                var label = document.createElement('div');
+                label.className = 'label';
+                label.textContent = it.name;
+                a.appendChild(thumb);
+                a.appendChild(label);
+                li.appendChild(a);
+                itemListEl.appendChild(li);
+            });
+        }
+        itemCountEl.textContent = rows.length + ' of ' + ITEMS.length;
+    }
+
+    function renderChip() {
+        if (!selection) {
+            chip.style.display = 'none';
+            return;
+        }
+        chip.style.display = 'flex';
+        chipText.textContent = 'Showing items for: ' + selection.name;
+    }
+
+    function setSelection(sel) {
+        selection = sel;
+        renderChip();
+        renderItemList();
+    }
+
+    chipClear.addEventListener('click', function () {
+        setSelection(null);
+    });
+
+    hasFileCheckbox.addEventListener('change', renderItemList);
+    typeSelect.addEventListener('change', renderItemList);
+
+    // --- Map ---
+    var map = L.map('map', { scrollWheelZoom: false }).setView([-25.27, 133.775], 4);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    var placeLayer = L.layerGroup().addTo(map);
+    var languageLayer = L.layerGroup();
+
+    function buildMarkers(list, geoLookup, layer, type) {
+        list.forEach(function (entry) {
+            var geo = geoLookup[entry.id];
+            if (!geo) return;
+            var marker = L.circleMarker([geo.lat, geo.lon], {
+                radius: 6,
+                weight: 1,
+                color: '#8f3119',
+                fillColor: '#c24628',
+                fillOpacity: 0.85
+            });
+            marker._searchName = entry.name.toLowerCase();
+            marker._entry = entry;
+            var popupHtml = '<strong>' + entry.name + '</strong><br>' +
+                entry.itemIds.length + ' item' + (entry.itemIds.length === 1 ? '' : 's') +
+                (entry.path ? '<br><a href="' + entry.path + '">View page</a>' : '');
+            marker.bindPopup(popupHtml);
+            marker.on('click', function () {
+                setSelection({ type: type, id: entry.id, name: entry.name, itemIds: new Set(entry.itemIds) });
+            });
+            marker.addTo(layer);
+        });
+    }
+
+    buildMarkers(PLACES, PLACE_GEO, placeLayer, 'place');
+    buildMarkers(LANGUAGES, LANGUAGE_GEO, languageLayer, 'language');
+
+    function setMode(next) {
+        mode = next;
+        toggleBtns.places.classList.toggle('active', mode === 'places');
+        toggleBtns.languages.classList.toggle('active', mode === 'languages');
+        if (mode === 'places') {
+            map.removeLayer(languageLayer);
+            map.addLayer(placeLayer);
+        } else {
+            map.removeLayer(placeLayer);
+            map.addLayer(languageLayer);
+        }
+        applyMarkerFilter();
+    }
+
+    toggleBtns.places.addEventListener('click', function () { setMode('places'); });
+    toggleBtns.languages.addEventListener('click', function () { setMode('languages'); });
+
+    function applyMarkerFilter() {
+        var q = box.value.trim().toLowerCase();
+        var layer = mode === 'places' ? placeLayer : languageLayer;
+        layer.eachLayer(function (marker) {
+            var visible = !q || marker._searchName.indexOf(q) !== -1;
+            var el = marker.getElement && marker.getElement();
+            if (el) el.style.display = visible ? '' : 'none';
+        });
+    }
+
+    function applyFilter() {
+        var q = box.value.trim();
+        clearBtn.style.display = q ? 'inline-flex' : 'none';
+        status.textContent = '';
+        applyMarkerFilter();
+        renderItemList();
+    }
+
+    box.addEventListener('input', applyFilter);
+    clearBtn.addEventListener('click', function () {
+        box.value = '';
+        applyFilter();
+        box.focus();
+    });
+
+    renderItemList();
+})();
+</script>
+
+</body>
+</html>

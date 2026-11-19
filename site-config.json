@@ -1,0 +1,10 @@
+{
+  "multipage": true,
+  "root": { "template": "templates/root.html" },
+  "types": {
+    "RepositoryObject": { "template": "templates/object.html" },
+    "Person": { "template": "templates/person.html" },
+    "Place": { "template": "templates/place.html" },
+    "Language": { "template": "templates/language.html" }
+  }
+}

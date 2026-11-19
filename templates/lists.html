@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {% set rootName = data.ids[data.entryPoint].props["http://schema.org/name"].fwd[0].value if data.ids[data.entryPoint].props["http://schema.org/name"] %}
+    <title>{{ rootName or "RO-Crate" }} &mdash; Lists</title>
+    <style>
+        :root {
+            --ink: #1a1512;
+            --muted: #786e63;
+            --line: #e9ded2;
+            --accent: #c24628;
+            --accent-dark: #8f3119;
+            --bg: #faf6f1;
+            --card: #ffffff;
+        }
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--ink);
+        }
+        header.site-header {
+            background: var(--ink);
+            color: #fff;
+            padding: 1.6em 1em 2em;
+            text-align: center;
+            border-bottom: 6px solid var(--accent);
+        }
+        header.site-header .nav-row {
+            max-width: 1100px;
+            margin: 0 auto 1em;
+            text-align: left;
+        }
+        header.site-header .nav-row a {
+            color: #fff;
+            text-decoration: none;
+            font-size: 0.95em;
+        }
+        header.site-header .nav-row a:hover { text-decoration: underline; }
+        header.site-header h1 {
+            margin: 0 0 0.3em;
+            font-size: 1.8em;
+            font-weight: 600;
+        }
+        header.site-header p {
+            margin: 0;
+            color: #c3cbd6;
+            max-width: 640px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .search-wrap {
+            max-width: 640px;
+            margin: 1.5em auto 0;
+            padding: 0 1em;
+            display: flex;
+            align-items: stretch;
+            gap: 0.6em;
+        }
+        .search-wrap .search-field {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+        #search-box {
+            width: 100%;
+            height: 100%;
+            padding: 0.8em 1em;
+            font-size: 1.05em;
+            border: 2px solid transparent;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+            outline: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        #search-box::-webkit-search-cancel-button {
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        #search-box:focus {
+            border-color: var(--accent);
+        }
+        #clear-search {
+            display: none;
+            flex: 0 0 auto;
+            align-items: center;
+            gap: 0.4em;
+            padding: 0 1.2em;
+            border: 2px solid transparent;
+            border-radius: 8px;
+            background: transparent;
+            color: #fff;
+            font-size: 0.95em;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        #clear-search:hover {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+        #search-status {
+            color: #c3cbd6;
+            font-size: 0.85em;
+            margin-top: 0.5em;
+            min-height: 1.2em;
+        }
+        main {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 2em 1em 4em;
+        }
+        .columns {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5em;
+        }
+        @media (max-width: 800px) {
+            .columns { grid-template-columns: 1fr; }
+        }
+        section.category {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 1.2em;
+        }
+        section.category h2 {
+            margin: 0 0 0.2em;
+            font-size: 1.1em;
+            color: var(--accent-dark);
+        }
+        section.category .count {
+            color: var(--muted);
+            font-size: 0.85em;
+            margin-bottom: 0.8em;
+            display: block;
+        }
+        ul.entry-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            max-height: 65vh;
+            overflow-y: auto;
+        }
+        ul.entry-list li.entry {
+            border-bottom: 1px solid var(--line);
+        }
+        ul.entry-list li.entry:last-child { border-bottom: none; }
+        ul.entry-list li.entry a {
+            display: block;
+            padding: 0.5em 0.1em;
+            color: var(--accent);
+            text-decoration: none;
+        }
+        ul.entry-list li.entry a:hover { text-decoration: underline; }
+        ul.entry-list li.entry.is-hidden { display: none; }
+        .empty-note {
+            color: var(--muted);
+            font-style: italic;
+            padding: 0.5em 0;
+        }
+        footer {
+            text-align: center;
+            color: var(--muted);
+            padding: 2em 1em;
+            font-size: 0.85em;
+        }
+        section.category.objects-section {
+            margin-top: 1.5em;
+            display: none;
+        }
+        .item-filters {
+            margin-top: 1.5em;
+            display: flex;
+            align-items: center;
+            gap: 1em;
+            font-size: 0.9em;
+        }
+        .item-filters label {
+            display: flex;
+            align-items: center;
+            gap: 0.4em;
+            cursor: pointer;
+        }
+        .item-filters select {
+            padding: 0.3em 0.5em;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: var(--card);
+            color: var(--ink);
+            font-size: 0.9em;
+        }
+        .item-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 1em;
+        }
+        .item-grid a.card {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            overflow: hidden;
+            text-decoration: none;
+            color: var(--ink);
+            display: flex;
+            flex-direction: column;
+            transition: box-shadow .1s, transform .1s;
+        }
+        .item-grid a.card:hover {
+            box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+            transform: translateY(-1px);
+        }
+        .item-grid a.card .thumb {
+            width: 100%;
+            height: 130px;
+            background-size: cover;
+            background-position: center;
+            background-color: #f0e6da;
+        }
+        .item-grid a.card .label {
+            padding: 0.6em 0.8em;
+            font-size: 0.9em;
+            line-height: 1.3;
+        }
+        .item-grid a.card.is-hidden { display: none; }
+    </style>
+</head>
+<body>
+
+{% macro entryList(sectionId, entities) %}
+    <ul class="entry-list" id="{{ sectionId }}-list">
+        {% for e in entities %}
+        <li class="entry" data-name="{{ e.name | lower }}">
+            <a href="{{ e.path }}">{{ e.name }}</a>
+        </li>
+        {% endfor %}
+    </ul>
+    {% if entities.length == 0 %}
+        <p class="empty-note">None found.</p>
+    {% endif %}
+{% endmacro %}
+
+{% macro itemGrid(sectionId, entities) %}
+    <div class="item-grid" id="{{ sectionId }}-list">
+        {% for e in entities %}
+        <a class="card entry" data-name="{{ e.name | lower }}" data-type="{{ e.type }}" data-has-file="{{ e.hasFile }}" href="{{ e.path }}">
+            <div class="thumb" {% if e.image %}style="background-image: url('{{ e.image }}');"{% endif %}></div>
+            <div class="label">{{ e.name }}</div>
+        </a>
+        {% endfor %}
+    </div>
+    {% if entities.length == 0 %}
+        <p class="empty-note">None found.</p>
+    {% endif %}
+{% endmacro %}
+
+{% macro display(data) %}
+    {% set item = data.ids[data.entryPoint] %}
+
+    <header class="site-header">
+        <div class="nav-row"><a href="ro-crate-preview.html">&larr; Map view</a></div>
+        <h1>{{ item.props["http://schema.org/name"].fwd[0].value if item.props["http://schema.org/name"] else "RO-Crate" }} &mdash; Lists</h1>
+        {% if item.props["http://schema.org/description"] %}
+            <p>{{ item.props["http://schema.org/description"].fwd[0].value }}</p>
+        {% endif %}
+        <div class="search-wrap">
+            <div class="search-field">
+                <input id="search-box" type="search" placeholder="Search languages, people, places and item titles&hellip;" autocomplete="off">
+            </div>
+            <button type="button" id="clear-search" aria-label="Clear search">Reset</button>
+        </div>
+        <div id="search-status"></div>
+    </header>
+
+    <main>
+        <div class="columns">
+
+            {% set languages = [] %}
+            {% for id in (data.types.Language | sort) %}
+                {% set e = data.ids[id] %}
+                {% set n = e.props["http://schema.org/name"].fwd[0].value if e.props["http://schema.org/name"] else e.id %}
+                {% set p = data.pages[id].path if data.pages[id] else "" %}
+                {% set _ = languages.push({name: n, path: p}) %}
+            {% endfor %}
+            {% set languages = languages | sort(false, true, "name") %}
+
+            <section class="category" id="languages">
+                <h2>Languages</h2>
+                <span class="count">{{ languages.length }} language{% if languages.length != 1 %}s{% endif %}</span>
+                {{ entryList("languages", languages) }}
+            </section>
+
+            {% set people = [] %}
+            {% for id in (data.types.Person | sort) %}
+                {% set e = data.ids[id] %}
+                {% set n = e.props["http://schema.org/name"].fwd[0].value if e.props["http://schema.org/name"] else e.id %}
+                {% set p = data.pages[id].path if data.pages[id] else "" %}
+                {% set _ = people.push({name: n, path: p}) %}
+            {% endfor %}
+            {% set people = people | sort(false, true, "name") %}
+
+            <section class="category" id="people">
+                <h2>People</h2>
+                <span class="count">{{ people.length }} people</span>
+                {{ entryList("people", people) }}
+            </section>
+
+            {% set places = [] %}
+            {% for id in (data.types.Place | sort) %}
+                {% set e = data.ids[id] %}
+                {% set n = e.props["http://schema.org/name"].fwd[0].value if e.props["http://schema.org/name"] else e.id %}
+                {% set p = data.pages[id].path if data.pages[id] else "" %}
+                {% set _ = places.push({name: n, path: p}) %}
+            {% endfor %}
+            {% set places = places | sort(false, true, "name") %}
+
+            <section class="category" id="places">
+                <h2>Places</h2>
+                <span class="count">{{ places.length }} places</span>
+                {{ entryList("places", places) }}
+            </section>
+
+        </div>
+
+        {% set objects = [] %}
+        {% for id in (data.types.RepositoryObject | sort) %}
+            {% set e = data.ids[id] %}
+            {% set n = e.props["http://schema.org/name"].fwd[0].value if e.props["http://schema.org/name"] else e.id %}
+            {% set p = data.pages[id].path if data.pages[id] else "" %}
+            {% set img = e.props["http://schema.org/image"].fwd[0].target_id if e.props["http://schema.org/image"] else "" %}
+            {% set t = e.props["arcp://name,callcolln/terms#type"].fwd[0].value if e.props["arcp://name,callcolln/terms#type"] else "" %}
+            {% set hasFile = e.props["http://schema.org/hasPart"] and e.props["http://schema.org/hasPart"].fwd.length > 0 %}
+            {% set _ = objects.push({name: n, path: p, image: img, type: t, hasFile: hasFile}) %}
+        {% endfor %}
+        {% set objects = objects | sort(false, true, "name") %}
+
+        <div class="item-filters">
+            <label><input type="checkbox" id="filter-has-file"> Has file</label>
+            <select id="filter-type">
+                <option value="">All types</option>
+            </select>
+        </div>
+
+        <section class="category objects-section" id="objects">
+            <h2>Items</h2>
+            <span class="count">{{ objects.length }} item{% if objects.length != 1 %}s{% endif %}</span>
+            {{ itemGrid("objects", objects) }}
+        </section>
+    </main>
+
+    <footer>Generated from an RO-Crate with ro-crate-static-site.</footer>
+{% endmacro %}
+
+{{ display(data) }}
+
+<script>
+(function () {
+    var box = document.getElementById('search-box');
+    var status = document.getElementById('search-status');
+    var clearBtn = document.getElementById('clear-search');
+    var alwaysShown = ['languages', 'people', 'places'].map(function (id) {
+        return {
+            section: document.getElementById(id),
+            items: Array.prototype.slice.call(document.querySelectorAll('#' + id + '-list li.entry'))
+        };
+    });
+    var objectsSection = {
+        section: document.getElementById('objects'),
+        items: Array.prototype.slice.call(document.querySelectorAll('#objects-list .entry'))
+    };
+    var hasFileCheckbox = document.getElementById('filter-has-file');
+    var typeSelect = document.getElementById('filter-type');
+    var itemTypes = Array.from(new Set(objectsSection.items.map(function (li) {
+        return li.getAttribute('data-type');
+    }).filter(Boolean))).sort();
+    itemTypes.forEach(function (t) {
+        var opt = document.createElement('option');
+        opt.value = t;
+        opt.textContent = t;
+        typeSelect.appendChild(opt);
+    });
+
+    function applyFilter() {
+        var q = box.value.trim().toLowerCase();
+        var requireFile = hasFileCheckbox.checked;
+        var typeFilter = typeSelect.value;
+        var totalShown = 0;
+
+        alwaysShown.forEach(function (s) {
+            var shown = 0;
+            s.items.forEach(function (li) {
+                var match = !q || li.getAttribute('data-name').indexOf(q) !== -1;
+                li.classList.toggle('is-hidden', !match);
+                if (match) shown++;
+            });
+            totalShown += shown;
+            s.section.style.display = (q && shown === 0) ? 'none' : '';
+        });
+
+        var itemFiltersActive = !!q || requireFile || !!typeFilter;
+        var objectsShown = 0;
+        objectsSection.items.forEach(function (li) {
+            var match = itemFiltersActive &&
+                (!q || li.getAttribute('data-name').indexOf(q) !== -1) &&
+                (!requireFile || li.getAttribute('data-has-file') === 'true') &&
+                (!typeFilter || li.getAttribute('data-type') === typeFilter);
+            li.classList.toggle('is-hidden', !match);
+            if (match) objectsShown++;
+        });
+        totalShown += objectsShown;
+        objectsSection.section.style.display = (itemFiltersActive && objectsShown > 0) ? 'block' : 'none';
+
+        status.textContent = q ? (totalShown + ' match' + (totalShown === 1 ? '' : 'es')) : '';
+        clearBtn.style.display = q ? 'inline-flex' : 'none';
+    }
+
+    box.addEventListener('input', applyFilter);
+    hasFileCheckbox.addEventListener('change', applyFilter);
+    typeSelect.addEventListener('change', applyFilter);
+
+    clearBtn.addEventListener('click', function () {
+        box.value = '';
+        applyFilter();
+        box.focus();
+    });
+})();
+</script>
+
+</body>
+</html>

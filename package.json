@@ -6,7 +6,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "prod": "NODE_ENV=production node --env-file .env.prod index.js",
-    "dev": "node --env-file .env.dev index.js"
+    "dev": "node --env-file .env.dev index.js",
+    "site": "node build-site.js"
   },
   "author": "The University of Queensland",
   "contributors": [
@@ -24,6 +25,7 @@
     "postgres": "^3.4.7",
     "ro-crate": "^3.7.2",
     "ro-crate-excel": "^1.2.1",
+    "ro-crate-static-site": "^0.0.9",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "overrides": {

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {% set item = data.ids[data.entryPoint] %}
+    {% set name = item.props["http://schema.org/name"].fwd[0].value if item.props["http://schema.org/name"] else item.id %}
+    <title>{{ name }}</title>
+    <style>
+        :root {
+            --ink: #1a1512;
+            --muted: #786e63;
+            --line: #e9ded2;
+            --accent: #c24628;
+            --accent-dark: #8f3119;
+            --bg: #faf6f1;
+            --card: #ffffff;
+        }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--ink); }
+        header.page-header { background: var(--ink); color: #fff; padding: 1em 1.2em; display: flex; align-items: center; gap: 1em; border-bottom: 4px solid var(--accent); }
+        header.page-header a.home-link { color: #fff; text-decoration: none; font-size: 0.95em; flex: 0 0 auto; }
+        header.page-header a.home-link:hover { text-decoration: underline; }
+        header.page-header .crumb { color: #d9cfc3; font-size: 0.9em; }
+        main { max-width: 900px; margin: 0 auto; padding: 2em 1em 4em; }
+        h1.title { margin: 0 0 0.1em; font-size: 1.6em; }
+        p.subtitle { margin: 0 0 1em; color: var(--muted); font-size: 1.1em; font-style: italic; }
+        .cover-wrap { text-align: center; margin: 1.5em 0; }
+        .cover-wrap img { max-width: 100%; max-height: 420px; border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,0.12); }
+        .description { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 1em 1.2em; margin-bottom: 1.5em; line-height: 1.5; }
+        table.meta { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+        table.meta tr { border-bottom: 1px solid var(--line); }
+        table.meta tr:last-child { border-bottom: none; }
+        table.meta th, table.meta td { text-align: left; padding: 0.6em 1em; vertical-align: top; }
+        table.meta th { width: 200px; color: var(--muted); font-weight: 600; font-size: 0.9em; }
+        table.meta a { color: var(--accent); text-decoration: none; }
+        table.meta a:hover { text-decoration: underline; }
+        .tag-list { display: flex; flex-wrap: wrap; gap: 0.4em; }
+        .tag-list a { background: #f3e9dd; padding: 0.3em 0.7em; border-radius: 14px; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+
+{% set rootId = "" %}
+{% for id, page in data.pages %}
+    {% if page.path == "ro-crate-preview.html" %}{% set rootId = id %}{% endif %}
+{% endfor %}
+{% set rootName = data.ids[rootId].props["http://schema.org/name"].fwd[0].value if rootId and data.ids[rootId].props["http://schema.org/name"] else "Home" %}
+
+<header class="page-header">
+    <a class="home-link" href="../../../../../ro-crate-preview.html">&larr; {{ rootName }}</a>
+    <span class="crumb">/ {{ name }}</span>
+</header>
+
+<main>
+    <h1 class="title">{{ name }}</h1>
+    {% if item.props["arcp://name,callcolln/terms#subtitle"] %}
+        <p class="subtitle">{{ item.props["arcp://name,callcolln/terms#subtitle"].fwd[0].value }}</p>
+    {% endif %}
+
+    {% set imageId = item.props["http://schema.org/image"].fwd[0].target_id if item.props["http://schema.org/image"] else null %}
+    {% if imageId %}
+        <div class="cover-wrap">
+            <img src="../../../../../{{ imageId }}" alt="Cover image for {{ name }}">
+        </div>
+    {% endif %}
+
+    {% if item.props["arcp://name,callcolln/terms#description"] %}
+        <div class="description">{{ item.props["arcp://name,callcolln/terms#description"].fwd[0].value }}</div>
+    {% endif %}
+
+    <table class="meta">
+        {% if item.props["arcp://name,callcolln/terms#type"] %}
+        <tr><th>Type</th><td>{{ item.props["arcp://name,callcolln/terms#type"].fwd[0].value }}</td></tr>
+        {% endif %}
+
+        {% if item.props["arcp://name,callcolln/terms#record_format"] %}
+        <tr><th>Record format</th><td>{{ item.props["arcp://name,callcolln/terms#record_format"].fwd[0].value }}</td></tr>
+        {% endif %}
+
+        {% if item.props["http://schema.org/inLanguage"] %}
+        <tr>
+            <th>Language</th>
+            <td class="tag-list">
+                {% for l in item.props["http://schema.org/inLanguage"].fwd %}
+                    {% if l.target_id and data.pages[l.target_id] %}
+                        <a href="../../../../../{{ data.pages[l.target_id].path }}">{{ l.target_name }}</a>
+                    {% endif %}
+                {% endfor %}
+            </td>
+        </tr>
+        {% endif %}
+
+        {% set placeAssocs = item.props["arcp://name,callcolln/terms#placeAssociation"].fwd if item.props["arcp://name,callcolln/terms#placeAssociation"] else [] %}
+        {% if placeAssocs.length > 0 %}
+        <tr>
+            <th>Place</th>
+            <td class="tag-list">
+                {% for pa in placeAssocs %}
+                    {% if pa.target_id and data.ids[pa.target_id] %}
+                        {% set ipEntity = data.ids[pa.target_id] %}
+                        {% set placeRef = ipEntity.props["http://schema.org/valueReference"].fwd[0] if ipEntity.props["http://schema.org/valueReference"] else null %}
+                        {% if placeRef and placeRef.target_id and data.pages[placeRef.target_id] %}
+                            <a href="../../../../../{{ data.pages[placeRef.target_id].path }}">
+                                {{ placeRef.target_name }}{% if ipEntity.props["arcp://name,callcolln/terms#place_type"] %} ({{ ipEntity.props["arcp://name,callcolln/terms#place_type"].fwd[0].value }}){% endif %}
+                            </a>
+                        {% endif %}
+                    {% endif %}
+                {% endfor %}
+            </td>
+        </tr>
+        {% endif %}
+
+        {% set contribs = item.props["http://schema.org/contributor"].fwd if item.props["http://schema.org/contributor"] else [] %}
+        {% if contribs.length > 0 %}
+        <tr>
+            <th>People</th>
+            <td>
+                {% for c in contribs %}
+                    {% if c.target_id and data.ids[c.target_id] %}
+                        {% set roleEntity = data.ids[c.target_id] %}
+                        {% set personRef = roleEntity.props["http://schema.org/contributor"].fwd[0] if roleEntity.props["http://schema.org/contributor"] else null %}
+                        {% set roleName = roleEntity.props["http://schema.org/roleName"].fwd[0].value if roleEntity.props["http://schema.org/roleName"] else "" %}
+                        {% if personRef and personRef.target_id and data.pages[personRef.target_id] %}
+                            <div>{% if roleName %}{{ roleName }}: {% endif %}<a href="../../../../../{{ data.pages[personRef.target_id].path }}">{{ personRef.target_name }}</a></div>
+                        {% endif %}
+                    {% endif %}
+                {% endfor %}
+            </td>
+        </tr>
+        {% endif %}
+
+        {% if item.props["arcp://name,callcolln/terms#date_of_publication"] %}
+        <tr><th>Date of publication</th><td>{{ item.props["arcp://name,callcolln/terms#date_of_publication"].fwd[0].value }}</td></tr>
+        {% endif %}
+
+        {% if item.props["arcp://name,callcolln/terms#rights_and_restrictions"] and item.props["arcp://name,callcolln/terms#rights_and_restrictions"].fwd[0].value %}
+        <tr><th>Rights &amp; restrictions</th><td>{{ item.props["arcp://name,callcolln/terms#rights_and_restrictions"].fwd[0].value }}</td></tr>
+        {% endif %}
+
+        {% if item.props["arcp://name,callcolln/terms#acknowledgements"] and item.props["arcp://name,callcolln/terms#acknowledgements"].fwd[0].value %}
+        <tr><th>Acknowledgements</th><td>{{ item.props["arcp://name,callcolln/terms#acknowledgements"].fwd[0].value }}</td></tr>
+        {% endif %}
+
+        {% if item.props["arcp://name,callcolln/terms#external_link"] and item.props["arcp://name,callcolln/terms#external_link"].fwd[0].value %}
+        <tr><th>External link</th><td><a href="{{ item.props['arcp://name,callcolln/terms#external_link'].fwd[0].value }}" target="_blank" rel="noopener">{{ item.props["arcp://name,callcolln/terms#external_link"].fwd[0].value }}</a></td></tr>
+        {% endif %}
+
+        {% set parts = item.props["http://schema.org/hasPart"].fwd if item.props["http://schema.org/hasPart"] else [] %}
+        {% if parts.length > 0 %}
+        <tr>
+            <th>Files</th>
+            <td>
+                {% for f in parts %}
+                    {% if f.target_id %}
+                        <div><a href="../../../../../{{ f.target_id }}">{{ f.target_name or f.target_id }}</a></div>
+                    {% endif %}
+                {% endfor %}
+            </td>
+        </tr>
+        {% endif %}
+    </table>
+</main>
+
+</body>
+</html>
