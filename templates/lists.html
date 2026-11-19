@@ -40,6 +40,10 @@
             font-size: 0.95em;
         }
         header.site-header .nav-row a:hover { text-decoration: underline; }
+        header.site-header .logo {
+            height: 60px;
+            margin: 0 0 0.8em;
+        }
         header.site-header h1 {
             margin: 0 0 0.3em;
             font-size: 1.8em;
@@ -261,6 +265,7 @@
 
     <header class="site-header">
         <div class="nav-row"><a href="ro-crate-preview.html">&larr; Map view</a></div>
+        <img class="logo" src="https://s3.amazonaws.com/callcollection/BIITE-logo-small.png" alt="Batchelor Institute of Indigenous Tertiary Education">
         <h1>{{ item.props["http://schema.org/name"].fwd[0].value if item.props["http://schema.org/name"] else "RO-Crate" }} &mdash; Lists</h1>
         {% if item.props["http://schema.org/description"] %}
             <p>{{ item.props["http://schema.org/description"].fwd[0].value }}</p>
