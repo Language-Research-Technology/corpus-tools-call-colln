@@ -177,6 +177,8 @@ export function populateCrate(crate, namespace, data, logger = console) {
   const termPrefix = generateArcpId(namespace, 'terms#');
   crate.addContext({ call: termPrefix, pcdm: 'http://pcdm.org/models#', ldac: 'https://w3id.org/ldac/terms#' });
   crate.addProfile(languageProfileURI('Collection'));
+  const metadataDescriptor = crate.getEntity('ro-crate-metadata.json');
+  metadataDescriptor['license'] = { '@id': 'https://creativecommons.org/licenses/by/4.0/' };
   const root = crate.rootDataset;
   root['@type'] = ['Dataset', 'RepositoryCollection'];
   root['name'] = 'CALL Collection';
