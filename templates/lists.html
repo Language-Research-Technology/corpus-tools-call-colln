@@ -343,8 +343,8 @@
         {% set objects = objects | sort(false, true, "name") %}
 
         <div class="item-filters">
-            <label><input type="checkbox" id="filter-has-file"> Has file</label>
-            <select id="filter-type">
+            <label><input type="checkbox" id="filter-has-file" autocomplete="off"> Has file</label>
+            <select id="filter-type" autocomplete="off">
                 <option value="">All types</option>
             </select>
         </div>
@@ -388,6 +388,14 @@
         typeSelect.appendChild(opt);
     });
 
+    var HASFILE_KEY = 'callCollectionHasFilesOnly';
+    var TYPE_KEY = 'callCollectionTypeFilter';
+    try {
+        hasFileCheckbox.checked = sessionStorage.getItem(HASFILE_KEY) === 'true';
+        var savedType = sessionStorage.getItem(TYPE_KEY);
+        if (savedType && itemTypes.indexOf(savedType) !== -1) typeSelect.value = savedType;
+    } catch (e) {}
+
     function applyFilter() {
         var q = box.value.trim().toLowerCase();
         var requireFile = hasFileCheckbox.checked;
@@ -420,14 +428,22 @@
     }
 
     box.addEventListener('input', applyFilter);
-    hasFileCheckbox.addEventListener('change', applyFilter);
-    typeSelect.addEventListener('change', applyFilter);
+    hasFileCheckbox.addEventListener('change', function () {
+        try { sessionStorage.setItem(HASFILE_KEY, hasFileCheckbox.checked ? 'true' : 'false'); } catch (e) {}
+        applyFilter();
+    });
+    typeSelect.addEventListener('change', function () {
+        try { sessionStorage.setItem(TYPE_KEY, typeSelect.value); } catch (e) {}
+        applyFilter();
+    });
 
     clearBtn.addEventListener('click', function () {
         box.value = '';
         applyFilter();
         box.focus();
     });
+
+    applyFilter();
 })();
 </script>
 

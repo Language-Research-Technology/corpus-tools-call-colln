@@ -16,10 +16,14 @@
         header.page-header .crumb { color: #d9cfc3; font-size: 0.9em; }
         main { max-width: 1000px; margin: 0 auto; padding: 2em 1em 4em; }
         h1.title { margin: 0 0 0.2em; }
-        p.count { color: var(--muted); margin: 0 0 1.5em; }
+        .filter-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.8em; margin: 0 0 1.2em; }
+        p.count { color: var(--muted); margin: 0; }
+        .has-files-toggle { display: flex; align-items: center; gap: 0.5em; font-size: 0.92em; color: var(--ink); cursor: pointer; user-select: none; }
+        .has-files-toggle input { accent-color: var(--accent); width: 1.1em; height: 1.1em; cursor: pointer; }
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1em; }
         .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; text-decoration: none; color: var(--ink); display: flex; flex-direction: column; transition: box-shadow .1s, transform .1s; }
         .card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.12); transform: translateY(-1px); }
+        .card.is-hidden { display: none; }
         .card .thumb { width: 100%; height: 140px; background-size: cover; background-position: center; background-color: #f0e6da; }
         .card .label { padding: 0.6em 0.8em; font-size: 0.92em; line-height: 1.3; }
         .empty-note { color: var(--muted); font-style: italic; }
@@ -42,25 +46,68 @@
     <h1 class="title">{{ name }}</h1>
 
     {% set objRefs = item.props["http://schema.org/inLanguage"].rev if item.props["http://schema.org/inLanguage"] else [] %}
-    <p class="count">{{ objRefs.length }} item{% if objRefs.length != 1 %}s{% endif %} in this language</p>
+
+    <div class="filter-row">
+        <p class="count" id="item-count">{{ objRefs.length }} item{% if objRefs.length != 1 %}s{% endif %} in this language</p>
+        <label class="has-files-toggle"><input type="checkbox" id="has-files-only" autocomplete="off"> Has files only</label>
+    </div>
 
     {% if objRefs.length == 0 %}
         <p class="empty-note">No items found for this language.</p>
     {% else %}
-        <div class="grid">
+        <div class="grid" id="item-grid">
             {% for o in (objRefs | sort(false, true, "target_name")) %}
                 {% if o.target_id and data.pages[o.target_id] %}
                     {% set objEntity = data.ids[o.target_id] %}
                     {% set imageId = objEntity.props["http://schema.org/image"].fwd[0].target_id if objEntity.props["http://schema.org/image"] else null %}
-                    <a class="card" href="../../../../../{{ data.pages[o.target_id].path }}">
+                    {% set hasFiles = objEntity.props["http://schema.org/hasPart"] and objEntity.props["http://schema.org/hasPart"].fwd.length > 0 %}
+                    <a class="card" data-hasfiles="{{ 'true' if hasFiles else 'false' }}" href="../../../../../{{ data.pages[o.target_id].path }}">
                         <div class="thumb" {% if imageId %}style="background-image: url('../../../../../{{ imageId }}');"{% endif %}></div>
                         <div class="label">{{ o.target_name }}</div>
                     </a>
                 {% endif %}
             {% endfor %}
         </div>
+        <p class="empty-note" id="no-files-note" style="display:none;">No items with files found.</p>
     {% endif %}
 </main>
+
+<script>
+(function () {
+    var checkbox = document.getElementById('has-files-only');
+    var grid = document.getElementById('item-grid');
+    var countEl = document.getElementById('item-count');
+    var noFilesNote = document.getElementById('no-files-note');
+    if (!checkbox || !grid) return;
+    var cards = Array.prototype.slice.call(grid.querySelectorAll('.card'));
+    var total = cards.length;
+
+    var STORAGE_KEY = 'callCollectionHasFilesOnly';
+    try {
+        checkbox.checked = sessionStorage.getItem(STORAGE_KEY) === 'true';
+    } catch (e) {}
+
+    function applyFilter() {
+        var onlyFiles = checkbox.checked;
+        var shown = 0;
+        cards.forEach(function (card) {
+            var visible = !onlyFiles || card.getAttribute('data-hasfiles') === 'true';
+            card.classList.toggle('is-hidden', !visible);
+            if (visible) shown++;
+        });
+        countEl.textContent = onlyFiles
+            ? shown + ' of ' + total + ' item' + (total === 1 ? '' : 's') + ' have files'
+            : total + ' item' + (total === 1 ? '' : 's') + ' in this language';
+        if (noFilesNote) noFilesNote.style.display = (onlyFiles && shown === 0) ? '' : 'none';
+    }
+
+    checkbox.addEventListener('change', function () {
+        try { sessionStorage.setItem(STORAGE_KEY, checkbox.checked ? 'true' : 'false'); } catch (e) {}
+        applyFilter();
+    });
+    applyFilter();
+})();
+</script>
 
 </body>
 </html>

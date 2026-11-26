@@ -369,8 +369,8 @@
                     <span class="count" id="item-count"></span>
                 </div>
                 <div class="item-filters">
-                    <label><input type="checkbox" id="filter-has-file"> Has file</label>
-                    <select id="filter-type">
+                    <label><input type="checkbox" id="filter-has-file" autocomplete="off"> Has file</label>
+                    <select id="filter-type" autocomplete="off">
                         <option value="">All types</option>
                     </select>
                 </div>
@@ -418,6 +418,14 @@
 
     var mode = 'places';
     var selection = null; // {type, id, name, itemIds: Set}
+
+    var HASFILE_KEY = 'callCollectionHasFilesOnly';
+    var TYPE_KEY = 'callCollectionTypeFilter';
+    try {
+        hasFileCheckbox.checked = sessionStorage.getItem(HASFILE_KEY) === 'true';
+        var savedType = sessionStorage.getItem(TYPE_KEY);
+        if (savedType && itemTypes.indexOf(savedType) !== -1) typeSelect.value = savedType;
+    } catch (e) {}
 
     function renderItemList() {
         var q = box.value.trim().toLowerCase();
@@ -476,8 +484,14 @@
         setSelection(null);
     });
 
-    hasFileCheckbox.addEventListener('change', renderItemList);
-    typeSelect.addEventListener('change', renderItemList);
+    hasFileCheckbox.addEventListener('change', function () {
+        try { sessionStorage.setItem(HASFILE_KEY, hasFileCheckbox.checked ? 'true' : 'false'); } catch (e) {}
+        renderItemList();
+    });
+    typeSelect.addEventListener('change', function () {
+        try { sessionStorage.setItem(TYPE_KEY, typeSelect.value); } catch (e) {}
+        renderItemList();
+    });
 
     // --- Map ---
     var map = L.map('map', { scrollWheelZoom: false }).setView([-25.27, 133.775], 4);
